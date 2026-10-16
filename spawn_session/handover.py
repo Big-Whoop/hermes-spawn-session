@@ -71,6 +71,7 @@ _KEY_ORDER = (
     "cwd",
     "worktree",
     "kanban_board",
+    "project",
     "allowed_toolsets",
     "created_at",
     "updated_at",
@@ -266,6 +267,7 @@ def create(
     worktree: dict[str, str] | None = None,
     kanban_board: str | None = None,
     allowed_toolsets: list[str] | None = None,
+    project: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> Handover:
     """Create a new handover file in ``base_dir`` and return it.
@@ -300,6 +302,7 @@ def create(
         "cwd": cwd or os.getcwd(),
         "worktree": dict(worktree) if worktree else None,
         "kanban_board": kanban_board,
+        "project": dict(project) if project else None,
         "allowed_toolsets": list(allowed_toolsets) if allowed_toolsets is not None else None,
         "created_at": ts,
         "updated_at": ts,
