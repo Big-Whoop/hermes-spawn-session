@@ -228,3 +228,38 @@ def test_update_status_is_atomic_on_failure(tmp_path, monkeypatch):
         ho.append_report(h.path, "r")
     assert h.path.read_text() == before
     assert sorted(x.name for x in h.path.parent.iterdir()) == [h.path.name]
+
+
+# --------------------------------------------------------------------------- H1 escaping (review round 1)
+
+H1_TASK = "Do the thing.\n# Heading in task\nmore\n\\# already escaped\n\\\\# double"
+H1_CONTEXT = "# Top heading\nbody\n#not-a-heading\n  # indented"
+
+
+def test_create_with_h1_lines_round_trips(tmp_path):
+    h = _create(tmp_path, task=H1_TASK, context=H1_CONTEXT)
+    back = ho.read(h.path)
+    assert back.task == H1_TASK
+    assert back.context == H1_CONTEXT
+    text = h.path.read_text()
+    assert "\n\\# Heading in task\n" in text
+    assert "\n\\\\# already escaped\n" in text
+    assert ho.render(back) == text  # render/parse fixpoint
+
+
+def test_append_report_with_h1_then_deliver(tmp_path):
+    h = _create(tmp_path)
+    report = "## Result\nDone.\n\n# Summary\nextra"
+    ho.append_report(h.path, report)
+    back = ho.read(h.path)
+    assert back.status == "reported"
+    assert back.reports == [report]
+    assert ho.update_status(h.path, "delivered").status == "delivered"
+    ho.append_report(h.path, "# Report\nfollow-up")
+    back = ho.read(h.path)
+    assert back.reports == [report, "# Report\nfollow-up"]
+
+
+def test_escape_unescape_inverse():
+    for s in [H1_TASK, H1_CONTEXT, "", "# ", "plain"]:
+        assert ho.unescape_body(ho.escape_body(s)) == s

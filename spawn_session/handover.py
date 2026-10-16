@@ -6,6 +6,14 @@ more appended ``# Report`` sections (``# Report``, ``# Report (2)``, ...).
 
 All writes are atomic: content is written to a temporary file in the target
 directory, fsynced, then moved into place with ``os.replace``.
+
+Free-text contract: task, context and report bodies may contain arbitrary
+markdown, including H1 lines (``# Heading``). Because H1 headings delimit the
+file's sections, body lines starting with ``# `` are escaped on write by
+prefixing a backslash (``\\# Heading``, which markdown renders as a literal
+``# Heading``); lines already starting with backslashes followed by ``# `` get
+one more backslash. Parsing strips exactly one backslash again, so the
+in-memory text round-trips losslessly and files on disk always parse.
 """
 
 from __future__ import annotations
@@ -45,6 +53,8 @@ REPORT_SUBSECTIONS = ("Result", "Changes", "Open items", "Artifacts")
 _FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
 _H1_RE = re.compile(r"^# (.+?)\s*$", re.MULTILINE)
 _REPORT_HEADING_RE = re.compile(r"^Report(?: \((\d+)\))?$")
+_ESCAPE_RE = re.compile(r"^(\\*# )", re.MULTILINE)
+_UNESCAPE_RE = re.compile(r"^\\(\\*# )", re.MULTILINE)
 
 # Frontmatter key order used when writing.
 _KEY_ORDER = (
@@ -165,6 +175,16 @@ def handover_path(base_dir: Path, title: str, date: datetime | None = None) -> P
 # --------------------------------------------------------------------------- render / parse
 
 
+def escape_body(text: str) -> str:
+    """Escape body lines that would otherwise be parsed as H1 section headings."""
+    return _ESCAPE_RE.sub(r"\\\1", text)
+
+
+def unescape_body(text: str) -> str:
+    """Inverse of :func:`escape_body`."""
+    return _UNESCAPE_RE.sub(r"\1", text)
+
+
 def _ordered_meta(meta: dict[str, Any]) -> dict[str, Any]:
     ordered = {k: meta[k] for k in _KEY_ORDER if k in meta}
     ordered.update({k: v for k, v in meta.items() if k not in ordered})
@@ -175,10 +195,14 @@ def render(h: Handover) -> str:
     front = yaml.safe_dump(
         _ordered_meta(h.meta), sort_keys=False, allow_unicode=True, default_flow_style=False
     ).rstrip("\n")
-    parts = [f"---\n{front}\n---\n", f"# Task\n{h.task.strip()}\n", f"# Context\n{h.context.strip()}\n"]
+    parts = [
+        f"---\n{front}\n---\n",
+        f"# Task\n{escape_body(h.task.strip())}\n",
+        f"# Context\n{escape_body(h.context.strip())}\n",
+    ]
     for i, body in enumerate(h.reports, start=1):
         heading = "Report" if i == 1 else f"Report ({i})"
-        parts.append(f"# {heading}\n{body.strip()}\n")
+        parts.append(f"# {heading}\n{escape_body(body.strip())}\n")
     return "\n".join(parts)
 
 
@@ -203,7 +227,7 @@ def parse(text: str, path: Path | None = None) -> Handover:
     sections: list[tuple[str, str]] = []
     for i, hm in enumerate(headings):
         end = headings[i + 1].start() if i + 1 < len(headings) else len(body)
-        sections.append((hm.group(1), body[hm.end():end].strip("\n")))
+        sections.append((hm.group(1), unescape_body(body[hm.end():end].strip("\n"))))
 
     task = context = None
     reports: list[str] = []
