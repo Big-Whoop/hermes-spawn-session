@@ -213,7 +213,18 @@ reports allowed; B stays open).
 - `/report [note]` — asks B's agent (via injected user message) to call
   `report_back` with a full structured report; `note` is passed as guidance.
 - `/abandon [reason]` — D11 abort.
-- `/detach` — D11 detach (asks for confirmation; irreversible).
+- `/detach confirm` — D11 detach (bare `/detach` only explains; irreversible).
+- `/spawn-cleanup <handover_id> yes|no` — the user's answer to the D11
+  "remove worktree + branch?" question after an abort (never automatic).
+
+Implementation notes (card 4): plugin slash commands receive only the raw
+argument string; the calling session is read from the gateway-bound session
+context (`HERMES_SESSION_KEY`). `/report` injects the request into B itself via
+`inject_message`. Undeliverable abort/detach notices are kept in the handover
+frontmatter (`pending_notices`) and retried with the reports by the backend
+action `deliver_pending(parent)` (the desktop "open reports" banner, card 6).
+Backend actions for A's card buttons: `action_abandon`, `action_detach`,
+`action_deliver_pending` in `spawn_session/commands.py`.
 
 ## 5. Handover file format (D5)
 
