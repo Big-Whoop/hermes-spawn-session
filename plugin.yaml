@@ -1,0 +1,9 @@
+name: spawn-session
+version: 0.1.0
+description: >
+  Agent-spawned visible child sessions for Hermes Desktop. The agent calls
+  spawn_session to start a top-level child session B (own model/effort, seeded
+  with task + context from a handover file) that reports back into the parent
+  when done. See SPEC.md and .hermes/decisions.md (D1-D13) in this repository.
+author: Big-Whoop
+homepage: https://github.com/Big-Whoop/hermes-spawn-session

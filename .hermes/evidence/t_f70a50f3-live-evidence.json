@@ -1,0 +1,35 @@
+{
+  "repo": "/workspace/dev/repos/ours/hermes-spawn-session/.worktrees/t_f70a50f3",
+  "commit": "fa9d254031060a471f3236a8380a8d7129edf443",
+  "ephemeral_home": "/opt/data/cache/scratch/spawn-session-live-r_uh3yj3",
+  "project_cwd": "/opt/data/cache/scratch/spawn-session-live-work-v9km6ay3/project",
+  "plugin_tool_registered": {
+    "toolset": "spawn-session"
+  },
+  "parent_session": {
+    "runtime_id": "583f5158",
+    "stored_id": "20261016_180845_d14d82"
+  },
+  "spawn_result": {
+    "ok": true,
+    "handover_id": "hs_20261016_606230",
+    "status": "running",
+    "child_session_id": "20261016_180851_a1a396",
+    "handover_path": "/opt/data/cache/scratch/spawn-session-live-work-v9km6ay3/project/.hermes/handovers/2026-10-16-live-child-task.md"
+  },
+  "child_session_row": {
+    "id": "20261016_180851_a1a396",
+    "source": "desktop",
+    "title": null,
+    "model": "qwen38vl-27b-kvu",
+    "provider": "",
+    "cwd": "/opt/data/cache/scratch/spawn-session-live-work-v9km6ay3/project",
+    "parent_session_id": "20261016_180845_d14d82"
+  },
+  "seed_message_persisted": true,
+  "handover_file": {
+    "path": "/opt/data/cache/scratch/spawn-session-live-work-v9km6ay3/project/.hermes/handovers/2026-10-16-live-child-task.md",
+    "exists": true,
+    "content_head": "---\nhandover_id: hs_20261016_606230\nparent_session_id: 20261016_180845_d14d82\nchild_session_id: 20261016_180851_a1a396\ntitle: Live child task\nstatus: running\ninitiation: user_asked\ninitiator: agent\nmodel: custom:cpa:qwen38vl-27b-kvu\nprovider: custom:cpa\neffort: null\ncwd: /opt/data/cache/scratch/spawn-session-live-work-v9km6ay3/project\nworktree: null\nkanban_board: hermes-spawn-session\nallowed_tools"
+  }
+}
