@@ -478,6 +478,62 @@ def set_settings_override(settings: Optional[Settings]) -> None:
     _settings_override = settings
 
 
+# --------------------------------------------------------------------------- report_back (D4, SPEC 4.2)
+
+REPORT_BACK_SCHEMA: dict[str, Any] = {
+    "name": "report_back",
+    "description": (
+        "Only in a session spawned by spawn_session: send a structured report back to the "
+        "parent session (appended to the handover file; the parent runs a turn on it). "
+        "The session stays open; call again for a follow-up report."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "result": {"type": "string", "description": "What was achieved (summary)."},
+            "changes": {"type": "array", "items": {"type": "string"}},
+            "open_items": {"type": "array", "items": {"type": "string"}},
+            "artifacts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"type": "string", "enum": ["path", "commit", "branch", "url", "pr"]},
+                        "value": {"type": "string"},
+                    },
+                    "required": ["kind", "value"],
+                },
+            },
+        },
+        "required": ["result"],
+    },
+}
+
+NOT_A_CHILD_MESSAGE = (
+    "report_back is only available in a session spawned by spawn_session; this session has "
+    "no parent to report to."
+)
+
+
+def report_back_handler(args: dict[str, Any], **kwargs: Any) -> str:
+    """Tool handler for ``report_back``. Returns a JSON string (tool contract)."""
+    from . import lifecycle
+
+    try:
+        session_id = str(kwargs.get("session_id") or "")
+        index = _load_index()
+        child_id = _child_in_lineage(index, session_id) if session_id else None
+        path = index.handover_for(child_id) if child_id else None
+        if path is None:
+            return json.dumps({"ok": False, "error": NOT_A_CHILD_MESSAGE})
+        return json.dumps(lifecycle.report(path, args or {}, by="agent", settings=_settings()))
+    except (lifecycle.LifecycleError, HandoverError) as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+    except Exception as exc:  # tool contract: never raise, always JSON
+        logger.exception("report_back failed")
+        return json.dumps({"ok": False, "error": f"internal error: {exc}"})
+
+
 # --------------------------------------------------------------------------- pre_tool_call guard (D10/D12)
 
 _guard_cache: dict[str, tuple[float, Optional[list[str]]]] = {}
@@ -487,9 +543,9 @@ _GUARD_TTL_S = 2.0
 def toolset_guard(**kwargs: Any) -> Optional[dict]:
     """``pre_tool_call`` hook: enforce child-session restrictions.
 
-    - D10/D12: our own tools (``spawn_session``, later ``report_back``) are
-      never available in a spawned child session — the handler refuses anyway,
-      this blocks them before execution for narrowed children as well.
+    - D10/D12: ``spawn_session`` is never available in a spawned child
+      session — the handler refuses anyway, this blocks it before execution.
+      ``report_back`` is the child's own tool and is never narrowed away.
     - D12: when the handover carries ``allowed_toolsets``, any tool whose
       toolset is not in that list is blocked with an explanatory message.
     """
@@ -505,8 +561,10 @@ def toolset_guard(**kwargs: Any) -> Optional[dict]:
     if child_id is None:
         return None
     handover_path = index.handover_for(child_id)
-    if tool_name in ("spawn_session", "report_back"):
+    if tool_name == "spawn_session":
         return {"action": "block", "message": D10_MESSAGE}
+    if tool_name == "report_back":
+        return None  # child-only tool: always allowed here; the handler checks status
     if handover_path is None:
         return None
     allowed = _allowed_toolsets_cached(handover_path)

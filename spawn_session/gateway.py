@@ -135,3 +135,11 @@ def submit_prompt(session_id: str, text: str, *, display_kind: str | None = None
 def set_session_title(session_id: str, title: str) -> dict:
     """Set a session's stored title (``session.title``)."""
     return rpc("session.title", {"session_id": session_id, "title": title})
+
+
+def archive_session(session_id: str) -> dict:
+    """Archive (soft-hide, messages kept) a session + lineage (``session.archive``).
+
+    Accepts a live runtime id or a stored id; never deletes (D11).
+    """
+    return rpc("session.archive", {"session_id": session_id, "archived": True})

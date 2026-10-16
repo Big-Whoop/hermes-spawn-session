@@ -75,3 +75,55 @@ def create_worktree(
             raise WorktreeError(f"branch or worktree already exists for slug {slug!r}") from exc
         raise
     return Worktree(path=str(wt_path), branch=branch)
+
+
+@dataclass(frozen=True)
+class BankResult:
+    """Outcome of :func:`bank_changes` (D11: never lose work before cleanup)."""
+
+    dirty: bool
+    commit: str | None
+    pushed: bool
+    remote: str | None
+    error: str | None = None
+
+
+def bank_changes(worktree_path: str | Path, branch: str, message: str) -> BankResult:
+    """WIP-commit uncommitted changes in ``worktree_path`` and push when a remote exists.
+
+    Clean trees are left untouched. Push failures are reported, never fatal:
+    the commit is local and nothing is deleted either way.
+    """
+    wt = Path(worktree_path)
+    if not wt.is_dir():
+        raise WorktreeError(f"worktree path does not exist: {wt}")
+    status = _run_git(wt, "status", "--porcelain")
+    commit: str | None = None
+    if status:
+        _run_git(wt, "add", "-A")
+        _run_git(
+            wt, "-c", "user.name=spawn-session", "-c", "user.email=spawn-session@localhost",
+            "commit", "--no-verify", "-m", message,
+        )
+        commit = _run_git(wt, "rev-parse", "HEAD")
+    remotes = [r for r in _run_git(wt, "remote").splitlines() if r.strip()]
+    remote = "origin" if "origin" in remotes else (remotes[0] if remotes else None)
+    pushed = False
+    error = None
+    if remote is not None:
+        try:
+            _run_git(wt, "push", "-u", remote, branch)
+            pushed = True
+        except WorktreeError as exc:
+            error = str(exc)
+    return BankResult(dirty=bool(status), commit=commit, pushed=pushed, remote=remote, error=error)
+
+
+def remove_worktree(repo_root: str | Path, worktree_path: str | Path, branch: str) -> None:
+    """Remove a worktree and its branch. Only call after explicit user confirmation (D11).
+
+    Refuses (git error) when the worktree still has uncommitted changes: bank first.
+    """
+    repo_root = Path(repo_root)
+    _run_git(repo_root, "worktree", "remove", str(worktree_path))
+    _run_git(repo_root, "branch", "-D", branch)
