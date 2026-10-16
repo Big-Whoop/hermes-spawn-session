@@ -7,3 +7,7 @@ description: >
   when done. See SPEC.md and .hermes/decisions.md (D1-D13) in this repository.
 author: Big-Whoop
 homepage: https://github.com/Big-Whoop/hermes-spawn-session
+# Keep in sync with pyproject.toml [project].dependencies (which wins).
+python_dependencies:
+  - "pyyaml>=6,<7"
+  - "fastapi>=0.104,<1"

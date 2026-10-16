@@ -26,6 +26,27 @@ presentation are follow-up cards.
    half ships opt-in per Hermes policy) — use **Rescan** if it is not listed.
 4. ⌘K → **Spawn session with report**.
 
+### Python dependencies
+
+The plugin needs `pyyaml` (handover frontmatter) and `fastapi` (REST
+backend). They are declared in `pyproject.toml` `[project].dependencies`
+(authoritative for Hermes) and mirrored in `plugin.yaml`
+`python_dependencies`; `tests/test_import_audit.py` keeps both in sync and
+fails on any undeclared third-party import. Hermes core modules
+(`hermes_cli`, `tools`, `gateway`, ...) are host-provided and imported
+lazily. Hermes prepares declared dependencies at enable time, after
+dependency consent, so an install that was enabled before the deps were
+declared must go through enablement once more:
+
+    hermes plugins disable spawn-session
+    hermes plugins enable spawn-session    # answer the dependency prompt
+    # then restart the gateway / dashboard so the backend remounts
+
+Verify with `hermes plugins show spawn-session` and the absence of
+`Failed to load plugin 'spawn-session'` in `agent.log` / `gui.log`.
+`scripts/check_clean_venv.sh` imports every module in a fresh venv holding
+only the declared deps (needs PyPI access).
+
 Checks without Desktop: `pytest` (Python half and REST routes) and
 `node scripts/smoke_desktop_plugin.mjs` (desktop half loads, registers its
 contributions, uses only allowed imports, no hardcoded colours).

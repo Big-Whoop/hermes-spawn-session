@@ -1,3 +1,18 @@
+# Python dependencies of the plugin. Hermes reads [project].dependencies
+# (it takes precedence over plugin.yaml python_dependencies; both lists are
+# kept identical and tests/test_import_audit.py enforces that).
+# Hermes core modules (hermes_cli, hermes_constants, tools, gateway,
+# tui_gateway) are provided by the host and imported lazily; they are not
+# declared here.
+[project]
+name = "spawn-session"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6,<7",
+    "fastapi>=0.104,<1",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
