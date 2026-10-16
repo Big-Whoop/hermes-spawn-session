@@ -1,0 +1,377 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": 1,
+      "url": "https://code.claude.com/docs/en/desktop",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 2,
+      "url": "https://code.claude.com/docs/de/desktop",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 3,
+      "url": "https://code.claude.com/docs/en/agent-teams",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 4,
+      "url": "https://code.claude.com/docs/en/agents.md",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 5,
+      "url": "https://code.claude.com/docs/en/cross-session-messaging.md",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 6,
+      "url": "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 7,
+      "url": "https://github.com/anthropics/claude-code/issues/100913",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 8,
+      "url": "https://github.com/anthropics/claude-code/issues/99393",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 9,
+      "url": "https://github.com/anthropics/claude-code/issues/53494",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 10,
+      "url": "https://github.com/anthropics/claude-code/issues/80238",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 11,
+      "url": "https://github.com/anthropics/claude-code/issues/72915",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 12,
+      "url": "https://github.com/anthropics/claude-code/issues/99862",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 13,
+      "url": "https://github.com/anthropics/claude-code/issues/101386",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 14,
+      "url": "https://x.com/WesRoth/status/2110513483833921828",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 15,
+      "url": "https://x.com/ClaudeDevs/status/2110445844675838148",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 16,
+      "url": "https://pasqualepillitteri.it/en/news/24032/claude-code-desktop-nested-sessions-environments",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 17,
+      "url": "https://alphasignal.ai/news/anthropic-s-claude-code-now-runs-nested-sessions-and-saves-dev-environments",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 18,
+      "url": "https://www.mindstudio.ai/blog/claude-code-3-0-parallel-sessions",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 19,
+      "url": "https://github.com/anthropics/claude-code/issues/95554",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 20,
+      "url": "https://github.com/anthropics/claude-code/issues/94697",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 21,
+      "url": "https://github.com/anthropics/claude-code/issues/91820",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 22,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/desktop",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 23,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/sessions",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 24,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/messaging",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 25,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/cli",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 26,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/delegation",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 27,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 28,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/bot-mode",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 29,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/subagent-lifecycle-api",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 30,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 31,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/cron",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 32,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 33,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 34,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/desktop-plugin-sdk",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 35,
+      "url": "https://hermes-agent.nousresearch.com/docs/reference/slash-commands",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 36,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/plugins",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 37,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 38,
+      "url": "https://hermes-agent.nousresearch.com/docs/developer-guide/tools-runtime",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 39,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/built-in-plugins",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 40,
+      "url": "https://hermes-agent.nousresearch.com/docs/user-guide/features/extending-the-dashboard",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 41,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/8948",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 42,
+      "url": "https://github.com/NousResearch/hermes-agent/pull/77109",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 43,
+      "url": "https://github.com/NousResearch/hermes-agent/pull/106423",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 44,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/76221",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 45,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/97635",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 46,
+      "url": "https://github.com/NousResearch/hermes-agent/pull/122859",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 47,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/123607",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 48,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/22191",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 49,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/125346",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 50,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/133212",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 51,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/131282",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 52,
+      "url": "https://github.com/NousResearch/hermes-agent/issues/25176",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 53,
+      "url": "https://www.reddit.com/r/hermesagent/comments/1ucmvi8/multiagent_profiles_megathread_hermes_agent_june",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 54,
+      "url": "https://www.reddit.com/r/hermesagent/comments/1x6qgz1/hermes_sessions_should_be_able_to_send_messages",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 55,
+      "url": "https://www.reddit.com/r/hermesagent/comments/1u88xbb/hermes_agent_ships_asynchronous_subagents",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 56,
+      "url": "https://the-agent-report.com/2026/06/hermes-async-subagents-june2026",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 57,
+      "url": "https://www.reddit.com/r/hermesagent/comments/1uvzqim/subagents",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 58,
+      "url": "https://github.com/NousResearch/hermes-agent/blob/main/tui_gateway/contracts/sessions.py",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 59,
+      "url": "https://github.com/NousResearch/hermes-agent/blob/main/hermes_state_sessions.py",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 60,
+      "url": "https://github.com/NousResearch/hermes-agent/blob/main/tools/delegate_tool.py",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 61,
+      "url": "https://github.com/NousResearch/hermes-agent/blob/main/gateway/platforms/api_server.py",
+      "title": "",
+      "accessed": "2026-10-16"
+    },
+    {
+      "id": 62,
+      "url": "https://github.com/NousResearch/hermes-agent/blob/main/agent/subagent_lifecycle.py",
+      "title": "",
+      "accessed": "2026-10-16"
+    }
+  ]
+}
