@@ -10,8 +10,9 @@ needs ``plugins.entries.spawn-session.allow_gateway_injection: true``. The deskt
 cards) and talks to the REST backend in ``dashboard/plugin_api.py``.
 
 Install: place this folder at ``$HERMES_HOME/plugins/spawn-session/`` (or a
-profile's ``plugins/`` root) and add ``spawn-session`` to ``plugins.enabled``
-in the profile config. The tool is registered on every surface but refuses to
+profile's ``plugins/`` root), run ``hermes plugins enable spawn-session`` and
+accept the Python dependency consent (PyYAML, declared in ``pyproject.toml``),
+then restart the gateway. The tool is registered on every surface but refuses to
 act outside Desktop sessions (D13).
 """
 

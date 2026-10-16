@@ -1,3 +1,18 @@
+# Python dependencies of the plugin. Hermes reads [project].dependencies from
+# this file (it takes precedence over `python_dependencies` in plugin.yaml, so
+# plugin.yaml deliberately declares none) and installs them after the user's
+# dependency consent on `hermes plugins enable` / Desktop enable.
+# Host-provided modules (hermes_cli, hermes_constants, tools, gateway,
+# tui_gateway, and fastapi for dashboard/plugin_api.py) are NOT declared: the
+# Hermes checkout supplies them. tests/test_dependencies.py enforces this.
+[project]
+name = "spawn-session"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "PyYAML>=6,<7",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
