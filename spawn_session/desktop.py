@@ -14,6 +14,11 @@ can be unit-tested without FastAPI or a running gateway.
 - :func:`dismiss_proposal` — Dismiss: ``proposed`` -> ``abandoned``.
 - :func:`spawn_defaults` — A's model/effort (picker default, D6) and whether
   the session is a spawned child (⌘K blocked, AT5.5).
+- :func:`list_children` — status cards in A + "N open report(s)" count (D8/D9).
+- :func:`child_info` — B's header: parent link, Task, Context (D9).
+- :func:`session_tree` — child -> parent map for sidebar row badges (D9/Q3).
+- :func:`abort_child` / :func:`detach_child` — status-card buttons (D11).
+- :func:`deliver_open_reports` — deliver-on-click of undelivered reports (D8).
 """
 
 from __future__ import annotations
@@ -320,6 +325,171 @@ def confirm_proposal(body: dict[str, Any]) -> dict[str, Any]:
     h = handover_read(path)
     index = tools._load_index()
     return tools.start_child(h, index=index, settings=settings, parent_source=parent_source, by="user")
+
+
+def _parent_title(parent_session_id: Any) -> Optional[str]:
+    if not isinstance(parent_session_id, str) or not parent_session_id:
+        return None
+    try:
+        return tools._resolve_parent(parent_session_id).title or None
+    except Exception:
+        return None
+
+
+def _open_report_count(h: Any) -> int:
+    """Undelivered items for A: a ``reported`` report plus kept notices (D8)."""
+    n = 1 if h.status == "reported" else 0
+    return n + len(h.meta.get("pending_notices") or [])
+
+
+def _child_view(h: Any) -> dict[str, Any]:
+    meta = h.meta
+    wt = meta.get("worktree") if isinstance(meta.get("worktree"), dict) else None
+    return {
+        "handover_id": meta.get("handover_id"),
+        "parent_session_id": meta.get("parent_session_id"),
+        "child_session_id": meta.get("child_session_id"),
+        "title": meta.get("title"),
+        "status": h.status,
+        "initiator": meta.get("initiator"),
+        "model": meta.get("model"),
+        "effort": meta.get("effort"),
+        "reports": len(h.reports),
+        "open_reports": _open_report_count(h),
+        "worktree": {"path": wt.get("path"), "branch": wt.get("branch")} if wt else None,
+        "worktree_cleanup": meta.get("worktree_cleanup"),
+        "created_at": meta.get("created_at"),
+        "updated_at": meta.get("updated_at"),
+        "handover_path": str(h.path) if h.path else None,
+    }
+
+
+def _handovers_of_parent(session_id: str) -> list[tuple[Path, Any]]:
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise DesktopError("session_id is required")
+    session_id = session_id.strip()
+    own = _parent_ids(session_id)
+    out: list[tuple[Path, Any]] = []
+    for path in _all_handover_files():
+        try:
+            h = handover_read(path)
+        except Exception:
+            continue
+        if _matches_parent(h.meta.get("parent_session_id"), session_id, own):
+            out.append((path, h))
+    return out
+
+
+def list_children(session_id: str) -> dict[str, Any]:
+    """Status cards in A (D9): every started child of ``session_id``.
+
+    ``proposed`` handovers are excluded (they are the confirmation cards).
+    ``open_reports`` is the total for the "N open report(s)" notice (D8).
+    """
+    children = [_child_view(h) for _, h in _handovers_of_parent(session_id)
+                if h.status != "proposed"]
+    children.sort(key=lambda c: str(c.get("created_at") or ""), reverse=True)
+    return {"children": children, "open_reports": sum(c["open_reports"] for c in children)}
+
+
+def child_info(session_id: str) -> dict[str, Any]:
+    """Header in B (D9): parent link, Task and Context; ``is_child`` False otherwise."""
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise DesktopError("session_id is required")
+    index = tools._load_index()
+    child_id = tools._child_in_lineage(index, session_id.strip())
+    path = index.handover_for(child_id) if child_id else None
+    if path is None:
+        return {"is_child": False}
+    h = handover_read(path)
+    parent_id = h.meta.get("parent_session_id")
+    return {
+        "is_child": True,
+        "handover_id": h.handover_id,
+        "status": h.status,
+        "detached": h.status == "detached",
+        "title": h.title,
+        "parent_session_id": parent_id,
+        "parent_title": _parent_title(parent_id),
+        "task": h.task,
+        "context": h.context,
+        "model": h.meta.get("model"),
+    }
+
+
+def session_tree() -> dict[str, Any]:
+    """Child session id -> parent link, for sidebar row decorations (D9 / Q3)."""
+    index = tools._load_index()
+    out: dict[str, dict[str, Any]] = {}
+    seen: dict[str, Any] = {}
+    for sid, entry in index.children.items():
+        p = entry.get("handover_path")
+        if not isinstance(p, str):
+            continue
+        if p not in seen:
+            try:
+                seen[p] = handover_read(p)
+            except Exception:
+                seen[p] = None
+        h = seen[p]
+        if h is None:
+            continue
+        out[sid] = {
+            "parent_session_id": h.meta.get("parent_session_id"),
+            "handover_id": h.handover_id,
+            "status": h.status,
+            "title": h.title,
+        }
+    return {"children": out}
+
+
+def abort_child(body: dict[str, Any]) -> dict[str, Any]:
+    """Abort button on A's status card (D11)."""
+    from . import lifecycle
+
+    path = _find_handover(body.get("handover_id"))  # type: ignore[arg-type]
+    reason = body.get("reason")
+    reason = reason.strip() if isinstance(reason, str) and reason.strip() else "aborted from the parent's status card"
+    try:
+        res = lifecycle.abandon(path, reason=reason, by="user", settings=tools._settings())
+    except lifecycle.LifecycleError as exc:
+        raise DesktopError(str(exc)) from exc
+    tools._broadcast_event("child.status", {"handover_id": res["handover_id"], "status": res["status"]})
+    return res
+
+
+def detach_child(body: dict[str, Any]) -> dict[str, Any]:
+    """Detach button on A's status card (D11, irreversible)."""
+    from . import lifecycle
+
+    if body.get("confirm") is not True:
+        raise DesktopError("detach is irreversible; resend with confirm=true")
+    path = _find_handover(body.get("handover_id"))  # type: ignore[arg-type]
+    try:
+        res = lifecycle.detach(path, by="user", settings=tools._settings())
+    except lifecycle.LifecycleError as exc:
+        raise DesktopError(str(exc)) from exc
+    tools._broadcast_event("child.status", {"handover_id": res["handover_id"], "status": res["status"]})
+    return res
+
+
+def deliver_open_reports(body: dict[str, Any]) -> dict[str, Any]:
+    """"N open report(s) -> Deliver" (D8): retry everything open for A."""
+    from . import delivery
+
+    session_id = body.get("session_id")
+    groups: dict[str, list[Path]] = {}
+    for path, h in _handovers_of_parent(session_id):  # type: ignore[arg-type]
+        if _open_report_count(h):
+            groups.setdefault(str(h.meta.get("parent_session_id")), []).append(path)
+    out: dict[str, Any] = {"reports": [], "notices": 0}
+    timeout = tools._settings().delivery_confirm_timeout_s
+    for parent_id, paths in groups.items():
+        res = delivery.deliver_pending(paths, parent_id, timeout_s=timeout)
+        out["reports"].extend(res["reports"])
+        out["notices"] += res["notices"]
+    out["queued"] = sum(1 for r in out["reports"] if r.get("queued"))
+    return out
 
 
 def dismiss_proposal(body: dict[str, Any]) -> dict[str, Any]:

@@ -38,6 +38,7 @@ try {
     ...['Badge', 'Button', 'Dialog', 'DialogContent', 'DialogDescription', 'DialogFooter', 'DialogHeader', 'DialogTitle', 'Input', 'Textarea'].map(comp),
     `export const COMPOSER_AREAS = { top: 'composer.top' }`,
     `export const PALETTE_AREA = 'palette'`,
+    `export const SESSION_ROW_AREAS = { leading: 'sessionRow.leading', trailing: 'sessionRow.trailing' }`,
     `export const STATUSBAR_AREAS = { left: 'statusBar.left', right: 'statusBar.right' }`,
     `export const queryClient = { invalidateQueries: () => {} }`,
     `export const useQuery = () => ({ data: null })`,
@@ -75,7 +76,12 @@ try {
   assert.equal(typeof palette.data.run, 'function')
   assert.ok(contributions.find(c => c.area === 'composer.top' && typeof c.render === 'function'), 'proposal card strip registered')
   assert.ok(contributions.find(c => c.area === 'statusBar.right' && typeof c.render === 'function'), 'dialog host registered')
-  for (const e of ['child.proposed', 'child.dismissed', 'child.created']) {
+  const top = contributions.filter(c => c.area === 'composer.top').map(c => c.id).sort()
+  assert.deepEqual(top, ['child-header', 'children', 'proposals'], 'composer.top: header, status cards, proposals')
+  const row = contributions.find(c => c.area === 'sessionRow.leading')
+  assert.ok(row && typeof row.data.render === 'function', 'sidebar row badge registered')
+  row.data.render({ sessionId: 'ses-x' })
+  for (const e of ['child.proposed', 'child.dismissed', 'child.created', 'child.status']) {
     assert.ok(events.includes(`plugin.spawn-session.${e}`), `listens to ${e}`)
   }
   // Rendering the mount points must not throw with empty state.

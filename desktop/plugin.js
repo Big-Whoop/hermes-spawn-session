@@ -9,6 +9,18 @@
  *   proposals: title, task, context, model; buttons Start / Edit / Dismiss.
  *   Rendered in the composer's top strip of the session that owns it.
  * - `plugin.spawn-session.child.created` -> open B as a tab (SPEC Q2).
+ * - Header in B (D9): "Started by Hermes from <A title>" (link to A) with
+ *   collapsible Task and Context blocks; `Detached` marker after D11 detach.
+ * - Status cards in A (D9/D11): one per started child (running / reported /
+ *   delivered / abandoned / detached) with Open, Abort and Detach buttons.
+ * - "N open report(s)" notice in A (D8): undelivered reports or notices kept
+ *   while A was closed; Deliver injects them into A on click.
+ * - Sidebar (D9 / SPEC Q3): the desktop SDK cannot nest rows, so the fallback
+ *   applies: the backend titles B `↳ <title>` (`↳ Detached: <title>` after
+ *   detach) and a SESSION_ROW_AREAS.leading badge marks child rows with their
+ *   parent in the tooltip. Recents order is not rewritten: the SDK can only
+ *   replace the whole manual order and cannot read it, so a reorder would
+ *   clobber the user's own order.
  *
  * Backend: dashboard/plugin_api.py via ctx.rest (namespace
  * /api/plugins/spawn-session). Live updates via host.onEvent with a polling
@@ -33,6 +45,7 @@ import {
   Input,
   PALETTE_AREA,
   queryClient,
+  SESSION_ROW_AREAS,
   STATUSBAR_AREAS,
   Textarea,
   useQuery,
@@ -52,6 +65,11 @@ const $dialog = atom(null)
 let rest = null // ctx.rest, bound in register()
 
 const proposalsKey = sessionId => [ID, 'proposals', sessionId]
+const childrenKey = sessionId => [ID, 'children', sessionId]
+const childInfoKey = sessionId => [ID, 'child', sessionId]
+const TREE_KEY = [ID, 'tree']
+
+const refreshAll = () => queryClient.invalidateQueries({ queryKey: [ID] })
 
 function errorText(err) {
   if (!err) return 'Unknown error'
@@ -59,12 +77,14 @@ function errorText(err) {
   return typeof raw === 'string' ? raw : JSON.stringify(raw)
 }
 
-function openTab(childId) {
-  if (!childId) return
-  Promise.resolve(host.openSession(childId, { intent: 'tab' })).catch(err =>
-    host.notifyError(err, 'Could not open the spawned session')
+function openSession(id, intent) {
+  if (!id) return
+  Promise.resolve(host.openSession(id, { intent })).catch(err =>
+    host.notifyError(err, 'Could not open the session')
   )
 }
+
+const openTab = childId => openSession(childId, 'tab')
 
 function modelRefsFrom(options) {
   const refs = []
@@ -315,6 +335,197 @@ function ProposalStrip() {
   })
 }
 
+
+// ------------------------------------------------------------------ B header (D9)
+
+function Collapsible({ label, text }) {
+  const [open, setOpen] = useState(false)
+  if (!text) return null
+  return jsxs('div', {
+    className: 'flex flex-col gap-1',
+    children: [
+      jsx('button', {
+        type: 'button',
+        'aria-expanded': open,
+        className: 'text-left font-medium text-(--ui-text-secondary) hover:text-foreground',
+        onClick: () => setOpen(v => !v),
+        children: `${open ? '▾' : '▸'} ${label}`
+      }),
+      open &&
+        jsx('div', {
+          className: 'max-h-48 overflow-auto whitespace-pre-wrap pl-3 text-(--ui-text-secondary)',
+          children: text
+        })
+    ]
+  })
+}
+
+function ChildHeader() {
+  const sessionId = useValue(host.state.focusedStoredSessionId)
+  const q = useQuery({
+    queryKey: childInfoKey(sessionId),
+    queryFn: () => rest(`/child?session_id=${encodeURIComponent(sessionId)}`),
+    enabled: Boolean(sessionId),
+    refetchInterval: POLL_MS
+  })
+  const info = q.data
+  if (!sessionId || !info || !info.is_child) return null
+  const parentLabel = info.parent_title || info.parent_session_id || 'parent session'
+  return jsxs('div', {
+    'data-spawn-session-header': info.handover_id,
+    className: 'mx-2 mb-1.5 mt-1.5 flex flex-col gap-1.5 rounded-[4px] border border-(--ui-stroke-secondary) p-2 text-xs',
+    children: [
+      jsxs('div', {
+        className: 'flex items-center gap-1.5',
+        children: [
+          info.detached && jsx(Badge, { variant: 'secondary', children: 'Detached' }),
+          jsx('span', { className: 'text-(--ui-text-secondary)', children: 'Started by Hermes from' }),
+          jsx('button', {
+            type: 'button',
+            className: 'min-w-0 truncate font-medium text-foreground underline-offset-2 hover:underline',
+            title: parentLabel,
+            onClick: () => openSession(info.parent_session_id, 'in-place'),
+            children: parentLabel
+          }),
+          jsx('span', { className: 'ml-auto shrink-0 text-(--ui-text-tertiary)', children: info.status })
+        ]
+      }),
+      jsx(Collapsible, { label: 'Task', text: info.task }),
+      jsx(Collapsible, { label: 'Context', text: info.context })
+    ]
+  })
+}
+
+// ------------------------------------------------------------------ A status cards (D8/D9/D11)
+
+const ACTIVE = new Set(['running', 'reported', 'delivered'])
+
+function StatusCard({ child }) {
+  const [busy, setBusy] = useState(null)
+  const [confirmDetach, setConfirmDetach] = useState(false)
+
+  const act = async kind => {
+    setBusy(kind)
+    try {
+      if (kind === 'abort') {
+        await rest('/abort', { method: 'POST', body: { handover_id: child.handover_id } })
+        host.notify({ kind: 'info', message: `Aborted “${child.title}”` })
+      } else {
+        await rest('/detach', { method: 'POST', body: { handover_id: child.handover_id, confirm: true } })
+        host.notify({ kind: 'info', message: `Detached “${child.title}”` })
+      }
+      refreshAll()
+    } catch (err) {
+      host.notifyError(err, `Could not ${kind} the session`)
+    } finally {
+      setBusy(null)
+      setConfirmDetach(false)
+    }
+  }
+
+  const canAbort = child.status === 'running'
+  const canDetach = ACTIVE.has(child.status)
+  return jsxs('div', {
+    'data-spawn-session-status': child.handover_id,
+    className: 'mx-2 mb-1.5 flex flex-col gap-1.5 rounded-[4px] border border-(--ui-stroke-secondary) p-2 text-xs',
+    children: [
+      jsxs('div', {
+        className: 'flex items-center gap-2',
+        children: [
+          jsx(Badge, { variant: 'secondary', children: child.status }),
+          jsx('span', { className: 'min-w-0 flex-1 truncate font-medium text-foreground', title: child.title, children: child.title }),
+          child.reports > 0 &&
+            jsx('span', { className: 'shrink-0 text-(--ui-text-tertiary)', children: `${child.reports} report${child.reports === 1 ? '' : 's'}` })
+        ]
+      }),
+      confirmDetach &&
+        jsx('div', {
+          className: 'text-(--ui-text-secondary)',
+          children: 'Detach is irreversible: the session continues on its own and no report is sent back.'
+        }),
+      jsxs('div', {
+        className: 'flex justify-end gap-1.5',
+        children: [
+          child.child_session_id &&
+            jsx(Button, { size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => openSession(child.child_session_id, 'tab'), children: 'Open' }),
+          canAbort &&
+            jsx(Button, { size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => act('abort'), children: busy === 'abort' ? 'Aborting…' : 'Abort' }),
+          canDetach && !confirmDetach &&
+            jsx(Button, { size: 'xs', variant: 'outline', disabled: Boolean(busy), onClick: () => setConfirmDetach(true), children: 'Detach' }),
+          confirmDetach &&
+            jsx(Button, { size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => setConfirmDetach(false), children: 'Cancel' }),
+          confirmDetach &&
+            jsx(Button, { size: 'xs', disabled: Boolean(busy), onClick: () => act('detach'), children: busy === 'detach' ? 'Detaching…' : 'Detach now' })
+        ]
+      })
+    ]
+  })
+}
+
+function OpenReportsNotice({ sessionId, count }) {
+  const [busy, setBusy] = useState(false)
+  const deliver = async () => {
+    setBusy(true)
+    try {
+      const res = await rest('/deliver', { method: 'POST', body: { session_id: sessionId } })
+      const n = ((res && res.queued) || 0) + ((res && res.notices) || 0)
+      host.notify({
+        kind: n ? 'success' : 'info',
+        message: n ? `Delivered ${n} item${n === 1 ? '' : 's'} to this session` : 'Nothing could be delivered — is this session live?'
+      })
+      refreshAll()
+    } catch (err) {
+      host.notifyError(err, 'Could not deliver the open reports')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return jsxs('div', {
+    'data-spawn-session-open-reports': count,
+    className: 'mx-2 mb-1.5 flex items-center gap-2 rounded-[4px] border border-(--ui-accent) p-2 text-xs',
+    children: [
+      jsx('span', { className: 'flex-1 font-medium text-foreground', children: `${count} open report${count === 1 ? '' : 's'}` }),
+      jsx(Button, { size: 'xs', disabled: busy, onClick: deliver, children: busy ? 'Delivering…' : 'Deliver' })
+    ]
+  })
+}
+
+function ChildrenStrip() {
+  const sessionId = useValue(host.state.focusedStoredSessionId)
+  const q = useQuery({
+    queryKey: childrenKey(sessionId),
+    queryFn: () => rest(`/children?session_id=${encodeURIComponent(sessionId)}`),
+    enabled: Boolean(sessionId),
+    refetchInterval: POLL_MS
+  })
+  const data = q.data || {}
+  // Finished children (abandoned / detached) are history: keep only active cards.
+  const items = (data.children || []).filter(c => ACTIVE.has(c.status))
+  const open = data.open_reports || 0
+  if (!sessionId || (items.length === 0 && open === 0)) return null
+  return jsxs('div', {
+    className: 'flex flex-col pt-1.5',
+    children: [
+      open > 0 && jsx(OpenReportsNotice, { sessionId, count: open }),
+      ...items.map(c => jsx(StatusCard, { child: c }, c.handover_id))
+    ]
+  })
+}
+
+// ------------------------------------------------------------------ sidebar row badge (D9 / Q3)
+
+function RowBadge({ sessionId }) {
+  const q = useQuery({ queryKey: TREE_KEY, queryFn: () => rest('/tree'), staleTime: POLL_MS, refetchInterval: POLL_MS })
+  const entry = q.data && q.data.children && q.data.children[sessionId]
+  if (!entry) return null
+  return jsx('span', {
+    'data-spawn-session-row': entry.handover_id,
+    className: 'shrink-0 text-[0.6875rem] text-(--ui-text-tertiary)',
+    title: `Spawned session (${entry.status})`,
+    children: entry.status === 'detached' ? '⤳' : '↳'
+  })
+}
+
 // ------------------------------------------------------------------ command
 
 async function openSpawnDialog() {
@@ -356,12 +567,16 @@ export default {
       },
       // Permanent mount point for the dialog (renders nothing visible itself).
       { id: 'dialog-host', area: STATUSBAR_AREAS.right, order: 990, render: () => jsx(SpawnDialogHost, {}) },
-      { id: 'proposals', area: COMPOSER_AREAS.top, render: () => jsx(ProposalStrip, {}) }
+      { id: 'proposals', area: COMPOSER_AREAS.top, render: () => jsx(ProposalStrip, {}) },
+      { id: 'child-header', area: COMPOSER_AREAS.top, order: -10, render: () => jsx(ChildHeader, {}) },
+      { id: 'children', area: COMPOSER_AREAS.top, order: 10, render: () => jsx(ChildrenStrip, {}) },
+      { id: 'row-badge', area: SESSION_ROW_AREAS.leading, data: { render: ({ sessionId }) => jsx(RowBadge, { sessionId }) } }
     ])
 
-    const refresh = () => queryClient.invalidateQueries({ queryKey: [ID, 'proposals'] })
+    const refresh = refreshAll
     ctx.onEvent(`plugin.${ID}.child.proposed`, refresh)
     ctx.onEvent(`plugin.${ID}.child.dismissed`, refresh)
+    ctx.onEvent(`plugin.${ID}.child.status`, refresh)
     // Agent-created (immediate) children open as a tab (SPEC Q2 / AT5.2).
     // User-initiated spawns are opened by the dialog itself.
     ctx.onEvent(`plugin.${ID}.child.created`, ev => {

@@ -11,6 +11,14 @@ Routes (this card, t_8fdde1ac):
 - ``POST /confirm``               — Start a proposal (with optional edits)
 - ``POST /dismiss``               — Dismiss a proposal
 
+Routes (card t_1f857d7f, D8/D9/D11):
+- ``GET  /children?session_id=``  — status cards in A + open-report count
+- ``GET  /child?session_id=``     — B's header (parent link, Task, Context)
+- ``GET  /tree``                  — child -> parent map for sidebar badges
+- ``POST /abort``                 — Abort a child from A's card
+- ``POST /detach``                — Detach a child (``confirm: true`` required)
+- ``POST /deliver``               — deliver open reports/notices to A
+
 The file is imported by path (not as part of the plugin package), so the
 plugin root is put on ``sys.path`` to import the ``spawn_session`` package.
 """
@@ -74,3 +82,33 @@ def confirm(body: dict = Body(...)) -> dict[str, Any]:
 @router.post("/dismiss")
 def dismiss(body: dict = Body(...)) -> dict[str, Any]:
     return _call(desktop.dismiss_proposal, body)
+
+
+@router.get("/children")
+def children(session_id: str) -> dict[str, Any]:
+    return _call(desktop.list_children, session_id)
+
+
+@router.get("/child")
+def child(session_id: str) -> dict[str, Any]:
+    return _call(desktop.child_info, session_id)
+
+
+@router.get("/tree")
+def tree() -> dict[str, Any]:
+    return _call(desktop.session_tree)
+
+
+@router.post("/abort")
+def abort(body: dict = Body(...)) -> dict[str, Any]:
+    return _call(desktop.abort_child, body)
+
+
+@router.post("/detach")
+def detach(body: dict = Body(...)) -> dict[str, Any]:
+    return _call(desktop.detach_child, body)
+
+
+@router.post("/deliver")
+def deliver(body: dict = Body(...)) -> dict[str, Any]:
+    return _call(desktop.deliver_open_reports, body)
