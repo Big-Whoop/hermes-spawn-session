@@ -166,6 +166,21 @@ hermes-spawn-session/                 (installed as ~/.hermes/plugins/spawn-sess
   B, row decorations, open-report banner; talks to backend via `ctx.rest` with
   polling fallback (`ctx.socket` is a no-op on OAuth remotes) [S1].
 
+### 3.1 Private Hermes seams (catalog rule 9)
+
+`hermes plugins validate` warns about two imports. Both were audited on
+2026-10-17 (card t_d28ed43c). Neither has a documented public replacement, so
+both stay behind their guarded fallbacks. The upstream hook request is drafted
+in `docs/upstream-hook-request.md` (not filed).
+
+| Call | Why it's needed | Public candidates checked | Why they don't fit | Fallback |
+| --- | --- | --- | --- | --- |
+| `gateway.session_context.get_session_env` (`spawn_session/commands.py:35`) | Slash-command handlers (`/report`, `/abandon`, `/detach`, `/spawn-cleanup`) must know which session invoked them | Injected `session_id` kwarg [S3]; `ctx.profile_name`; `ctx.dispatch_tool` | `register_command` handlers receive only `raw_args` (no context kwargs); `profile_name` is not a session; `dispatch_tool` forwards kwargs into the tool but cannot read the caller's session | `os.environ` `HERMES_SESSION_KEY` / `HERMES_SESSION_ID`; empty means a clean "cannot determine the current session" error |
+| `tui_gateway.server.handle_request` (`spawn_session/gateway.py:47`): `session.create`, `prompt.submit`, `session.title`, `session.archive` | Create the visible child B with title/cwd/model/provider/parent/seed (D1, D2, D7, D11) | `ctx.dispatch_tool`; Desktop SDK `host.request` [S1]; API server `POST /api/sessions` | No tool creates sessions; `host.request` exists only in the renderer, but the agent-initiated `spawn_session` tool runs in Python with no desktop round-trip; `POST /api/sessions` needs a separately enabled, keyed API server and only inserts a row (no cwd, no live runtime session, no seed turn) | `GatewayUnavailable`, so the tool returns a JSON error (D13: Desktop/TUI host only) |
+
+Tool handlers already use the public `session_id` kwarg (`tools.py:275`,
+`:599`, `:629`).
+
 ## 4. Tool schemas
 
 ### 4.1 `spawn_session` (agent-initiated, D2/D3/D6/D7/D10/D12/D13)

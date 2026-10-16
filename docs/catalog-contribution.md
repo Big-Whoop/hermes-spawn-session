@@ -51,8 +51,8 @@ inside Hermes's core constraints is still unverified:
       context_exfil (lane2-hermes-native-session-spawning.md:266), sys_prompt_override (lane1-hermes-docs.md:316)
     ✓ no core override — no runtime rebinds of Hermes core
     ✓ desktop surface — stays inside the plugin SDK surface
-    ⚠ private core imports (catalog rule 9): spawn_session/commands.py:33
-      gateway.session_context.get_session_env; spawn_session/gateway.py:46
+    ⚠ private core imports (catalog rule 9): spawn_session/commands.py:35
+      gateway.session_context.get_session_env; spawn_session/gateway.py:47
       tui_gateway.server.handle_request.
     ◆ Isolation — runs in the plugin host (plugins.isolation: host)
       · dashboard backend API is served through the plugin host (buffered responses)
@@ -111,7 +111,7 @@ rules in [S1]/[S2].
 | R12 | Desktop: theme variables only, no hardcoded colours | [S10] "Style with theme variables" | MET | a grep for `#hex` / `rgb(` in `desktop/plugin.js` finds no hits |
 | R13 | Desktop: `defaultEnabled: false` for opt-in plugins | [S10] (optional; default `true`) | UNCLEAR (not a catalog rule) | `desktop/plugin.js:550` exports no `defaultEnabled`, so the desktop half is on as soon as it is installed. The Python half is already opt-in via `plugins.enabled` [S3 user-guide]. Decision needed (Q3) |
 | R14 | No runtime overrides of core (rule 9) | [S2] rule 9 | MET | validator "no core override ✓" |
-| R15 | Only public surfaces; private core imports are warned (rule 9) | [S2] rule 9; [S1] Before you submit | UNCLEAR, likely reviewer pushback | `spawn_session/commands.py:33` imports `gateway.session_context.get_session_env`; `spawn_session/gateway.py:46` imports `tui_gateway.server.handle_request` (the session RPC door for creating child B). A warning, not a failure. Precedent plan-mode was listed with a disclosure of "eight groups of internal Hermes seams … each guarded with a documented fallback" [S9] |
+| R15 | Only public surfaces; private core imports are warned (rule 9) | [S2] rule 9; [S1] Before you submit | NOT MET, no public alternative (audited 2026-10-17, card t_d28ed43c) | `spawn_session/commands.py:35` imports `gateway.session_context.get_session_env`; `spawn_session/gateway.py:47` imports `tui_gateway.server.handle_request` (the session RPC door for creating child B). Both stay, guarded; the reasons are in SPEC.md §3.1. Upstream hook request drafted in `docs/upstream-hook-request.md` (not filed). A warning, not a failure. Precedent plan-mode was listed with a disclosure of "eight groups of internal Hermes seams … each guarded with a documented fallback" [S9] |
 | R16 | Dependency policy: oldest compatible floor plus upper bound (rule 10) | [S2] rule 10; [S3] Dependency security policy | MET | `pyproject.toml` `PyYAML>=6,<7` |
 | R17 | Deps resolve under core constraints (`--install-deps`) (rule 14) | [S1][S2] | UNCLEAR | not run with `--install-deps` here; PyYAML is very likely already a core dependency |
 | R18 | Host modules not declared as deps | [S3] Python dependencies | MET | `pyproject.toml` header comment; `tests/test_dependencies.py` |
@@ -149,11 +149,15 @@ Not implemented on this card. Each item is one suggested follow-up card.
   AGENTS.md (`.hermes/research/` is read-only), so it needs a user decision
   (Q1).
 - **G3 (high, rule 9): private core imports.** `gateway.session_context` and
-  `tui_gateway.server.handle_request`. Check whether a public ctx API now
-  covers creating a session and reading the session key, e.g.
-  `ctx.dispatch_tool`, session-key kwargs on hooks or SDK RPCs. If none does:
-  keep the guarded fallbacks, disclose them like plan-mode did, and/or open an
-  upstream "asking for a hook" issue (user decision; not from this card).
+  `tui_gateway.server.handle_request`. Audited 2026-10-17 (card t_d28ed43c)
+  against the plugin guide, the Desktop SDK guide, the plugins user guide,
+  programmatic-integration and the API server docs, and then against the
+  validator's documented-module allowlist
+  (`hermes_cli/plugin_validate_private_imports.py`, read-only). The result: **no public
+  surface covers either call**, so both stay behind their guarded fallbacks.
+  The per-call reasons are in SPEC.md §3.1. The upstream issue text is drafted
+  in `docs/upstream-hook-request.md`; filing it is a user decision (Q2). Until
+  a hook exists, disclose both seams in the README (G5) like plan-mode did.
 - **G4: add `requires_hermes: ">=0.22.2"`** (or the oldest release actually
   tested) to `plugin.yaml` and the entry. Add `license: MIT`, plus optionally
   `manifest_version: 2` and `tags`.
