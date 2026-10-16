@@ -109,7 +109,7 @@ rules in [S1]/[S2].
 | R10 | Install security scan: no `dangerous` (rule 7) | [S2] rule 7 | NOT MET | flagged: `.hermes/research/2026-10-16-model-routing/lane1-hermes-docs.md:101,316`, `.hermes/research/2026-10-16-spawn-with-report/lane2-hermes-native-session-spawning.md:266` (quoted docs and prompts, not code, but the scanner reads the whole tree) |
 | R11 | Desktop half stays inside the SDK (rule 8) | [S2] rule 8; [S10] | MET | validator "desktop surface ✓"; imports only `@hermes/plugin-sdk`, `react`, `react/jsx-runtime` (`desktop/plugin.js:33-55`) |
 | R12 | Desktop: theme variables only, no hardcoded colours | [S10] "Style with theme variables" | MET | a grep for `#hex` / `rgb(` in `desktop/plugin.js` finds no hits |
-| R13 | Desktop: `defaultEnabled: false` for opt-in plugins | [S10] (optional; default `true`) | UNCLEAR (not a catalog rule) | `desktop/plugin.js:550` exports no `defaultEnabled`, so the desktop half is on as soon as it is installed. The Python half is already opt-in via `plugins.enabled` [S3 user-guide]. Decision needed (Q3) |
+| R13 | Desktop: `defaultEnabled: false` for opt-in plugins | [S10] (optional; default `true`) | MET | `desktop/plugin.js` exports `defaultEnabled: false` (decision Q3, user 2026-10-17); the desktop half stays off until enabled in Capabilities → Plugins. The Python half is opt-in via `plugins.enabled` [S3 user-guide]. `scripts/smoke_desktop_plugin.mjs` asserts the flag |
 | R14 | No runtime overrides of core (rule 9) | [S2] rule 9 | MET | validator "no core override ✓" |
 | R15 | Only public surfaces; private core imports are warned (rule 9) | [S2] rule 9; [S1] Before you submit | NOT MET, no public alternative (audited 2026-10-17, card t_d28ed43c) | `spawn_session/commands.py:35` imports `gateway.session_context.get_session_env`; `spawn_session/gateway.py:47` imports `tui_gateway.server.handle_request` (the session RPC door for creating child B). Both stay, guarded; the reasons are in SPEC.md §3.1. Upstream hook request drafted in `docs/upstream-hook-request.md` (not filed). A warning, not a failure. Precedent plan-mode was listed with a disclosure of "eight groups of internal Hermes seams … each guarded with a documented fallback" [S9] |
 | R16 | Dependency policy: oldest compatible floor plus upper bound (rule 10) | [S2] rule 10; [S3] Dependency security policy | MET | `pyproject.toml` `PyYAML>=6,<7` |
@@ -171,6 +171,7 @@ Not implemented on this card. Each item is one suggested follow-up card.
   badge. Store them under `docs/media/` and use pinned raw URLs; the banner
   must be 2:1.
 - **G8: decide on `defaultEnabled: false`** for `desktop/plugin.js` (Q3).
+  DONE: user decided yes (Q3, 2026-10-17); shipped by kanban t_bd72d56a.
 - **G9: CI.** A GitHub Actions workflow running pytest, the Node smoke test
   and, if feasible, `hermes plugins validate --install-deps`, with
   `uv --exclude-newer "3 days"` as [S3] recommends.
@@ -194,7 +195,8 @@ G11 → G12 → user submits.
 - Q2: Should we open an upstream issue asking for a public seam for session
   creation and session-key lookup (rule 9), or list with a disclosure as
   plan-mode did?
-- Q3: Should the desktop half ship with `defaultEnabled: false`?
+- Q3: Should the desktop half ship with `defaultEnabled: false`? Decided: yes
+  (user, 2026-10-17); see R13/G8.
 - Q4: Which category: `desktop` or `automation`? And which `requires_hermes`
   floor: only 0.22.2, or test older releases too?
 - Q5: Should we submit only after the live e2e card t_787f6427 passes and a

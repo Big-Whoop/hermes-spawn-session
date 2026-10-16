@@ -58,6 +58,7 @@ try {
 
   assert.equal(plugin.id, 'spawn-session')
   assert.equal(typeof plugin.register, 'function')
+  assert.equal(plugin.defaultEnabled, false, 'desktop half is opt-in (defaultEnabled: false)')
 
   const contributions = []
   const events = []

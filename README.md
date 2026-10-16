@@ -71,7 +71,9 @@ A (your chat) ──spawn──▶ B "↳ Fix flaky test"  (own model/effort, sa
    (`/api/plugins/spawn-session/`) are only loaded at startup.
 
 5. In Desktop, go to **Capabilities → Plugins** and enable **Spawn session**.
-   Desktop plugins are opt-in. If the plugin is not listed, click **Rescan**.
+   The desktop half ships with `defaultEnabled: false`, so it stays off after
+   install until you enable it here. If the plugin is not listed, click
+   **Rescan**.
 
 6. Check that it loaded:
    - `agent.log` and `gui.log` contain no `Failed to load plugin spawn-session`
