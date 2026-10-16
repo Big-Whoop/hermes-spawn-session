@@ -126,6 +126,8 @@ def _reset_tools_seams():
     tools._find_repo_root = worktree_mod.find_repo_root
     tools._create_worktree = worktree_mod.create_worktree
     tools._broadcast_event = tools._default_broadcast
+    tools._lineage_ids = parent_mod.lineage_ids
+    tools.set_settings_override(None)
     _guard_cache_clear()
 
 

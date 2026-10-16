@@ -213,6 +213,28 @@ class TestWorktree:
         (seed_frame,) = seed_frames(fake_gateway)
         assert "spawn/fix-flaky-test" in seed_frame["params"]["text"]
 
+    @pytest.mark.parametrize("variant", ["own_initiative", "expensive", "cap"])
+    def test_no_worktree_for_proposed_handover(
+        self, variant, fake_gateway, desktop_parent, tmp_home
+    ):
+        calls = []
+        tools._create_worktree = lambda *a, **k: calls.append((a, k))
+        args = base_args(worktree=True)
+        if variant == "own_initiative":
+            args["initiation"] = "own_initiative"
+        elif variant == "expensive":
+            tools.set_settings_override(Settings(cost_rank={"custom:cpa:claude-opus-5-5": 1}))
+            args["model"] = "unknown:very-expensive"
+        else:
+            tools.set_settings_override(Settings(max_children=0))
+        result = call_spawn(args)
+        assert result["status"] == "proposed"
+        assert calls == []
+        h = read(result["handover_path"])
+        assert h.meta["worktree"] is None
+        assert h.meta["worktree_requested"] is True
+        assert h.meta["cwd"] == desktop_parent.cwd
+
     def test_worktree_false_keeps_parent_cwd(self, fake_gateway, desktop_parent, tmp_home):
         result = call_spawn(base_args(worktree=False))
         (create_frame,) = create_frames(fake_gateway)
@@ -310,10 +332,45 @@ class TestNestingAndConcurrency:
                 update_status(h.path, "reported")
                 if status == "delivered":
                     update_status(h.path, "delivered")
+            # Real gateway children carry two distinct ids (durable + runtime).
             index.register_child(
-                [f"ses-existing-{i}"], handover_path=h.path,
+                [f"ses-existing-{i}", f"rt-existing-{i}"], handover_path=h.path,
                 parent_session_id="ses-parent-1", status=status,
             )
+
+    def test_two_id_children_counted_once(self, fake_gateway, desktop_parent, tmp_home):
+        # Regression (review round 1): 2 real children must count as 2, not 4,
+        # so the 3rd agent-initiated spawn still starts with max_children=3.
+        self._seed_running_children(desktop_parent, tmp_home, 2)
+        assert state_mod.running_agent_children(state_mod.load_index(), "ses-parent-1") == 2
+        result = call_spawn(base_args())
+        assert result["status"] == "running"
+
+    def test_cap_after_spawns_through_handler(self, fake_gateway, desktop_parent, tmp_home):
+        # Three handler spawns (each indexed under rt-/ses- ids) -> 4th proposed.
+        for i in range(3):
+            assert call_spawn(base_args(title=f"Spawn {i}"))["status"] == "running"
+        result = call_spawn(base_args(title="Spawn 3"))
+        assert result["status"] == "proposed"
+        assert any("limit reached: 3" in r for r in result["confirmation_required"])
+
+    def test_spawn_in_compressed_continuation_of_child_refused(
+        self, fake_gateway, desktop_parent, tmp_home
+    ):
+        # Lineage: continuation (the caller) -> child B -> A. B's row links to A
+        # via parent_session_id too, so a root walk would land on A.
+        index = state_mod.load_index()
+        h = mk_handover(
+            handover_dir_for(desktop_parent.cwd), title="B", task="t", context="c",
+            parent_session_id="ses-a", model="custom:cpa:x", status="running",
+        )
+        assert h.path is not None
+        index.register_child(["ses-b"], handover_path=h.path, parent_session_id="ses-a", status="running")
+        tools._lineage_ids = lambda sid: [sid, "ses-b", "ses-a"]
+        result = call_spawn(base_args())
+        assert result["ok"] is False
+        assert "one level only" in result["error"]
+        assert create_frames(fake_gateway) == []
 
     def test_fourth_agent_child_is_proposed(self, fake_gateway, desktop_parent, tmp_home):
         self._seed_running_children(desktop_parent, tmp_home, 3)
@@ -457,6 +514,16 @@ class TestToolsetGuard:
             ["ses-b"], handover_path=h.path, parent_session_id="ses-parent-1", status="running"
         )
         return h
+
+    def test_guard_enforced_in_compressed_continuation(self, desktop_parent, tmp_home, fake_registry):
+        fake_registry({"read_file": "file", "terminal": "terminal"})
+        self._register_child(desktop_parent, tmp_home, allowed=["file"])
+        tools._lineage_ids = lambda sid: [sid, "ses-b", "ses-parent-1"]
+        verdict = tools.toolset_guard(tool_name="spawn_session", session_id="ses-b-cont")
+        assert verdict is not None and verdict["action"] == "block"
+        verdict = tools.toolset_guard(tool_name="terminal", session_id="ses-b-cont")
+        assert verdict is not None and "allowed_toolsets" in verdict["message"]
+        assert tools.toolset_guard(tool_name="read_file", session_id="ses-b-cont") is None
 
     def test_non_child_session_untouched(self, desktop_parent, tmp_home):
         assert tools.toolset_guard(tool_name="terminal", session_id="ses-parent-1") is None

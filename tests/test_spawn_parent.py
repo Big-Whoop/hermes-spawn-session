@@ -102,3 +102,14 @@ def test_lineage_root_walks_parents(tmp_path: Path):
     assert parent_mod.lineage_root("c1", db_path=db) == "root"
     # Unknown id returns itself.
     assert parent_mod.lineage_root("ghost", db_path=db) == "ghost"
+
+
+def test_lineage_ids_lists_every_hop(tmp_path: Path):
+    row = lambda i, parent: {"id": i, "source": "desktop", "title": "", "model": "m", "model_config": None,
+                             "billing_provider": "", "cwd": None, "git_repo_root": None,
+                             "parent_session_id": parent, "session_key": None}
+    db = make_db(tmp_path, [row("cont", "b"), row("b", "a"), row("a", None), row("x", "y"), row("y", "x")])
+    assert parent_mod.lineage_ids("cont", db_path=db) == ["cont", "b", "a"]
+    assert parent_mod.lineage_ids("ghost", db_path=db) == ["ghost"]
+    assert parent_mod.lineage_ids("x", db_path=db) == ["x", "y"]  # cycle cut
+    assert parent_mod.lineage_ids("cont", db_path=db, max_hops=1) == ["cont", "b"]

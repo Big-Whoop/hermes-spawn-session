@@ -118,6 +118,41 @@ def resolve_parent_context(session_id: str, db_path: Path | None = None) -> Pare
     return _row_to_context(row, str(row["id"] or session_id))
 
 
+def lineage_ids(session_id: str, db_path: Path | None = None, max_hops: int = 5) -> list[str]:
+    """``session_id`` followed by up to ``max_hops`` ancestors via ``parent_session_id``.
+
+    Compression continuations link to their predecessor through
+    ``parent_session_id``; so does the spawn link B -> A. Callers must test each
+    hop (e.g. "is this id a spawned child?") rather than only the root, because
+    the root of a child's lineage is its spawning parent A (SPEC Q5 / D10).
+    Best-effort: DB errors stop the walk; cycles are cut.
+    """
+    ids = [session_id]
+    path = db_path or state_db_path()
+    if not session_id or not path.exists():
+        return ids
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+    except sqlite3.Error:
+        return ids
+    try:
+        current = session_id
+        for _ in range(max_hops):
+            try:
+                row = conn.execute(
+                    "SELECT parent_session_id FROM sessions WHERE id = ?", (current,)
+                ).fetchone()
+            except sqlite3.Error:
+                break
+            if row is None or not row[0] or str(row[0]) in ids:
+                break
+            current = str(row[0])
+            ids.append(current)
+        return ids
+    finally:
+        conn.close()
+
+
 def lineage_root(session_id: str, db_path: Path | None = None, max_hops: int = 5) -> str:
     """Walk ``parent_session_id`` links upward (compression continuations).
 

@@ -135,6 +135,26 @@ class StateIndex:
         data["children"] = children
         self._write(data)
 
+    def register_handover_root(self, directory: Path) -> None:
+        """Remember a handover directory so :func:`load_index` can rescan it.
+
+        Roots live in a sidecar file next to ``state.json`` (not inside it), so
+        losing or corrupting the index does not also lose the per-cwd
+        ``<A.cwd>/.hermes/handovers`` locations needed to rebuild it.
+        """
+        roots_path = handover_roots_path(self.path)
+        roots = read_handover_roots(roots_path)
+        entry = str(Path(directory).resolve())
+        if entry in roots:
+            return
+        from .handover import atomic_write_text
+
+        roots_path.parent.mkdir(parents=True, exist_ok=True)
+        with _LOCAL_LOCK:
+            atomic_write_text(
+                roots_path, json.dumps(sorted(set(roots) | {entry}), indent=2) + "\n"
+            )
+
     def rebuild(self, handover_files: list[Path]) -> int:
         """Rebuild the index from authoritative handover files. Returns entries."""
         children: dict[str, dict[str, Any]] = {}
@@ -166,6 +186,19 @@ def default_state_path(home: Path | None = None) -> Path:
     return Path(home) / "spawn-session" / "state.json"
 
 
+def handover_roots_path(state_path: Path) -> Path:
+    return Path(state_path).with_name("handover-roots.json")
+
+
+def read_handover_roots(roots_path: Path) -> list[str]:
+    try:
+        with open(roots_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    return [str(x) for x in data if isinstance(x, str)] if isinstance(data, list) else []
+
+
 def load_index(path: Path | None = None) -> StateIndex:
     """Open the index; rebuild it when empty but handover files exist."""
     path = path or default_state_path()
@@ -179,16 +212,25 @@ def load_index(path: Path | None = None) -> StateIndex:
 
 def _find_handover_files(state_path: Path) -> list[Path]:
     """Handover files live under ``<cwd>/.hermes/handovers`` (per repo) plus the
-    profile fallback ``$HERMES_HOME/spawn-session/handovers``. The index can only
-    discover the fallback deterministically; per-cwd dirs are registered at
-    creation time (SPEC section 5)."""
+    profile fallback ``$HERMES_HOME/spawn-session/handovers``. Per-cwd dirs are
+    recorded in the ``handover-roots.json`` sidecar at creation time and
+    rescanned here. Residual risk: if the sidecar is lost too, per-cwd children
+    are not rediscovered until a new spawn re-registers their directory."""
     from .parent import hermes_home
 
     home = hermes_home()
+    dirs: list[Path] = [home / "spawn-session" / "handovers"]
+    dirs.extend(Path(d) for d in read_handover_roots(handover_roots_path(state_path)))
     found: list[Path] = []
-    fallback = home / "spawn-session" / "handovers"
-    if fallback.is_dir():
-        found.extend(sorted(fallback.glob("*.md")))
+    seen: set[str] = set()
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.md")):
+            key = str(f.resolve())
+            if key not in seen:
+                seen.add(key)
+                found.append(f)
     return found
 
 
@@ -196,15 +238,21 @@ def running_agent_children(index: StateIndex, parent_session_id: str) -> int:
     """Count RUNNING handover files of ``parent_session_id`` initiated by the agent.
 
     The handover file is authoritative (SPEC section 6), so this counts files,
-    not index entries.
+    not index entries: one child is indexed under several ids (runtime +
+    durable), so entries are de-duplicated by handover path.
     """
     count = 0
+    seen: set[str] = set()
     for sid, entry in index.children.items():
         if entry.get("parent_session_id") != parent_session_id:
             continue
         path = index.handover_for(sid)
         if path is None:
             continue
+        key = str(path.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
         try:
             h = parse(path.read_text(encoding="utf-8"), path=path)
         except (HandoverParseError, OSError, ValueError):

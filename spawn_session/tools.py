@@ -16,7 +16,8 @@ Rule summary (see SPEC.md section 4.1 for the canonical text):
   count as most expensive.
 - D3: ``own_initiative`` always starts as ``proposed`` (no session created);
   ``user_asked`` starts immediately unless the cost or cap rule applies.
-- D7: default cwd = A's cwd; ``worktree: true`` creates a git worktree +
+- D7: default cwd = A's cwd; ``worktree: true`` (immediate start only; proposals
+  record ``worktree_requested`` and create nothing) creates a git worktree +
   branch ``spawn/<slug>`` and B's cwd becomes it. The Kanban board is resolved
   by name and passed in the seed message (never mutated globally).
 - D12: ``allowed_toolsets`` may only narrow A's toolsets; ``spawn_session`` is
@@ -58,6 +59,24 @@ _gateway_submit: Callable[[str, str], dict] = gateway.submit_prompt
 _find_repo_root: Callable[[str | Path], Path] = wt_mod.find_repo_root
 _create_worktree: Callable[..., wt_mod.Worktree] = wt_mod.create_worktree
 _broadcast_event: Callable[[str, dict], None] = _default_broadcast
+_lineage_ids: Callable[[str], list[str]] = parent_mod.lineage_ids
+
+
+def _child_in_lineage(index: state_mod.StateIndex, session_id: str) -> Optional[str]:
+    """Return the spawned-child id found in ``session_id``'s lineage, or None.
+
+    Tests ``is_child`` at EACH hop (SPEC Q5 / D10): a compression continuation
+    of child B links to B via ``parent_session_id``, and B links to A the same
+    way, so only a per-hop check (not a root walk) recognises the continuation.
+    """
+    try:
+        ids = _lineage_ids(session_id)
+    except Exception:
+        ids = [session_id]
+    for sid in ids or [session_id]:
+        if index.is_child(sid):
+            return sid
+    return None
 
 
 def _resolve_kanban_board() -> Optional[str]:
@@ -257,7 +276,7 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
 
     # ---- D10: no nesting (child sessions, incl. detached ones, cannot spawn)
     index = _load_index()
-    if index.is_child(a.session_id):
+    if _child_in_lineage(index, a.session_id) is not None:
         return {"ok": False, "error": D10_MESSAGE}
 
     # ---- D6: model resolution
@@ -276,22 +295,9 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
             f"model {model_ref} is more expensive than the parent's {a.model_ref}"
         )
 
-    # ---- D7: worktree (before handover so its path lands in the frontmatter)
     base_cwd = a.cwd or os.getcwd()
     wt_info: Optional[dict[str, str]] = None
     child_cwd = base_cwd
-    if worktree:
-        repo_root = a.git_repo_root
-        if not repo_root:
-            repo_root = str(_find_repo_root(base_cwd))
-        from .handover import slugify
-
-        wt = _create_worktree(
-            repo_root, slugify(title),
-            worktree_dir=settings.worktree_dir, branch_prefix=settings.branch_prefix,
-        )
-        wt_info = {"path": wt.path, "branch": wt.branch}
-        child_cwd = wt.path
 
     # ---- D3/D10: decide immediate start vs. proposal
     running_children = state_mod.running_agent_children(index, a.session_id)
@@ -304,7 +310,22 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         needs_confirmation.append("agent own initiative — awaiting user confirmation")
 
     status = "running" if not needs_confirmation else "proposed"
-    notes = "; ".join(needs_confirmation) if needs_confirmation else None
+
+    # ---- D7: worktree only on the immediate-start path. A proposal must not
+    # touch the user's repo before approval (D3); it records the intent in the
+    # frontmatter (``worktree_requested``) and the confirm path creates it.
+    if worktree and status == "running":
+        repo_root = a.git_repo_root
+        if not repo_root:
+            repo_root = str(_find_repo_root(base_cwd))
+        from .handover import slugify
+
+        wt = _create_worktree(
+            repo_root, slugify(title),
+            worktree_dir=settings.worktree_dir, branch_prefix=settings.branch_prefix,
+        )
+        wt_info = {"path": wt.path, "branch": wt.branch}
+        child_cwd = wt.path
 
     # ---- handover file (authoritative record, SPEC section 5)
     base_dir = _handover_base_dir(a.cwd)
@@ -327,8 +348,17 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
     )
     assert h.path is not None  # handover_create always sets the path
     handover_path = Path(h.path)
+    from .handover import write as handover_write
+
+    try:
+        index.register_handover_root(handover_path.parent)
+    except OSError:
+        logger.warning("could not record handover root %s", handover_path.parent)
 
     if status == "proposed":
+        if worktree:
+            h.meta["worktree_requested"] = True
+            handover_write(h)
         # No session created yet (D3). The desktop half shows the proposal card.
         _broadcast_event("child.proposed", {
             "handover_id": h.handover_id,
@@ -377,8 +407,6 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
 
     # Record the child ids in the handover + state index (authoritative first).
     h.meta["child_session_id"] = child_stored
-    from .handover import write as handover_write
-
     handover_write(h)
     index.register_child(
         [child_stored, child_runtime],
@@ -473,9 +501,10 @@ def toolset_guard(**kwargs: Any) -> Optional[dict]:
         index = _load_index()
     except Exception:
         return None  # fail open for the guard; the handler re-checks D10 itself
-    if not index.is_child(session_id):
+    child_id = _child_in_lineage(index, session_id)
+    if child_id is None:
         return None
-    handover_path = index.handover_for(session_id)
+    handover_path = index.handover_for(child_id)
     if tool_name in ("spawn_session", "report_back"):
         return {"action": "block", "message": D10_MESSAGE}
     if handover_path is None:

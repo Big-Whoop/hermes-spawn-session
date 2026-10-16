@@ -105,3 +105,39 @@ def test_load_index_rebuilds_when_empty(tmp_path: Path, monkeypatch):
     assert idx.path.exists()
     data = json.loads(idx.path.read_text(encoding="utf-8"))
     assert "ses-f" in data["children"]
+
+
+def test_running_agent_children_dedupes_two_id_children(tmp_path: Path):
+    base = tmp_path / "handovers"
+    idx = _index(tmp_path)
+    for i in range(2):
+        h = mk_handover(
+            base, title=f"C{i}", task="t", context="c",
+            parent_session_id="ses-p", model="prov:m", status="running",
+        )
+        assert h.path is not None
+        idx.register_child(
+            [f"ses-{i}", f"rt-{i}"], handover_path=h.path, parent_session_id="ses-p", status="running"
+        )
+    assert len(idx.children) == 4
+    assert state_mod.running_agent_children(idx, "ses-p") == 2
+
+
+def test_load_index_rebuilds_per_cwd_handovers(tmp_path: Path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    per_cwd = tmp_path / "proj" / ".hermes" / "handovers"
+    h = mk_handover(
+        per_cwd, title="P", task="t", context="c",
+        parent_session_id="ses-p", model="prov:m", status="running", child_session_id="ses-pc",
+    )
+    assert h.path is not None
+    idx = state_mod.load_index()
+    idx.register_child(["ses-pc"], handover_path=h.path, parent_session_id="ses-p", status="running")
+    idx.register_handover_root(per_cwd)
+    idx.register_handover_root(per_cwd)  # idempotent
+    roots = json.loads(state_mod.handover_roots_path(idx.path).read_text(encoding="utf-8"))
+    assert roots == [str(per_cwd.resolve())]
+    # Lose the index: the rebuild must rediscover the per-cwd child.
+    idx.path.unlink()
+    assert state_mod.load_index().is_child("ses-pc")
