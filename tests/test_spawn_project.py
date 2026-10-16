@@ -122,3 +122,30 @@ class TestFallback:
         meta = read(call_spawn(base_args())["handover_path"]).meta
         assert meta["project"]["assignment"] == "seed_switch"
         assert meta["allowed_toolsets"] is None
+
+class TestDesktopPaths:
+    """The ⌘K spawn and the proposal Start path apply the same D7 inheritance."""
+
+    def test_user_spawn_inherits_project_and_board(self, fake_gateway, desktop_parent, tmp_home, settings_override):
+        from spawn_session import desktop
+        make_db(tmp_home, [("p1", "proj", "Proj", "proj-board", [desktop_parent.cwd], 0)])
+        res = desktop.user_spawn({"session_id": "ses-parent-1", "title": "T", "task": "Do it"})
+        meta = read(res["handover_path"]).meta
+        assert meta["project"]["id"] == "p1" and meta["project"]["assignment"] == "cwd"
+        assert meta["kanban_board"] == "proj-board"
+        assert res["project"]["id"] == "p1"
+
+    def test_confirm_with_worktree_replans_assignment(
+        self, fake_gateway, desktop_parent, tmp_home, settings_override, monkeypatch
+    ):
+        from spawn_session import desktop
+        from spawn_session import worktree as wt_mod
+        make_db(tmp_home, [("p1", "proj", "Proj", None, [desktop_parent.cwd], 0)])
+        monkeypatch.setattr(tools, "_create_worktree", lambda repo, slug, **kw: wt_mod.Worktree(
+            path="/elsewhere/wt-" + slug, branch="spawn/" + slug))
+        r = call_spawn(base_args(initiation="own_initiative", worktree=True, allowed_toolsets=["terminal"]))
+        assert read(r["handover_path"]).meta["project"]["assignment"] == "cwd"
+        desktop.confirm_proposal({"handover_id": r["handover_id"]})
+        meta = read(r["handover_path"]).meta
+        assert meta["project"]["assignment"] == "seed_switch"
+        assert "project" in meta["allowed_toolsets"]

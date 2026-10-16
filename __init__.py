@@ -5,9 +5,9 @@ Agent half (this package): registers the ``spawn_session`` and
 ``/abandon``, ``/detach`` and ``/spawn-cleanup`` slash commands (4.3), plus a
 ``pre_tool_call`` guard enforcing the child-session toolset restrictions
 (D10/D12). Report delivery into the parent uses ``ctx.inject_message`` and
-needs ``plugins.entries.spawn-session.allow_gateway_injection: true``. The desktop half (⌘K palette,
-status cards, header block — SPEC section 7) is a later card and lives in
-``desktop/`` when it lands.
+needs ``plugins.entries.spawn-session.allow_gateway_injection: true``. The desktop half lives in
+``desktop/plugin.js`` (⌘K "Spawn session with report" + proposal confirmation
+cards) and talks to the REST backend in ``dashboard/plugin_api.py``.
 
 Install: place this folder at ``$HERMES_HOME/plugins/spawn-session/`` (or a
 profile's ``plugins/`` root) and add ``spawn-session`` to ``plugins.enabled``

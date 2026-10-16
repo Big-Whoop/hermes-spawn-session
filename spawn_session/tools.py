@@ -330,24 +330,7 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         wt_info = {"path": wt.path, "branch": wt.branch}
         child_cwd = wt.path
 
-    # ---- D7 / SPEC Q1: inherit A's Desktop Project. Hermes derives a session's
-    # project from its cwd (projects_db.project_for_path), so B is assigned by
-    # cwd; if B's cwd is not owned by A's project, B is told to switch itself.
-    a_project = _project_for_path(base_cwd)
-    project_meta: Optional[dict[str, Any]] = None
-    if a_project is not None:
-        b_project = _project_for_path(child_cwd)
-        project_meta = a_project.to_meta()
-        project_meta["assignment"] = (
-            "cwd" if b_project is not None and b_project.id == a_project.id else "seed_switch"
-        )
-        # The fallback needs the `project` toolset in B (A is a desktop session
-        # and has it, so this never exceeds A's rights — D12).
-        if (project_meta["assignment"] == "seed_switch" and allowed_toolsets is not None
-                and "project" not in allowed_toolsets):
-            allowed_toolsets = [*allowed_toolsets, "project"]
-    kanban_board = (a_project.board if a_project is not None and a_project.board
-                    else _resolve_kanban_board())
+    project_meta, allowed_toolsets, kanban_board = plan_project(base_cwd, child_cwd, allowed_toolsets)
 
     # ---- handover file (authoritative record, SPEC section 5)
     base_dir = _handover_base_dir(a.cwd)
@@ -379,14 +362,21 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         logger.warning("could not record handover root %s", handover_path.parent)
 
     if status == "proposed":
+        # Reasons are persisted so the desktop card can show them after a
+        # restart (the broadcast below is fire-and-forget).
+        h.meta["proposal_reasons"] = list(needs_confirmation)
         if worktree:
             h.meta["worktree_requested"] = True
-            handover_write(h)
+        handover_write(h)
         # No session created yet (D3). The desktop half shows the proposal card.
         _broadcast_event("child.proposed", {
             "handover_id": h.handover_id,
             "parent_session_id": a.session_id,
             "title": title,
+            "task": task.strip(),
+            "context": context.strip(),
+            "model": model_ref,
+            "effort": child_effort,
             "reasons": needs_confirmation,
             "handover_path": str(handover_path),
         })
@@ -399,6 +389,66 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
             "confirmation_required": needs_confirmation,
         }
 
+    return start_child(h, index=index, settings=settings, parent_source=a.source, by="agent")
+
+
+def plan_project(
+    base_cwd: Optional[str],
+    child_cwd: Optional[str],
+    allowed_toolsets: Optional[list[str]],
+) -> tuple[Optional[dict[str, Any]], Optional[list[str]], Optional[str]]:
+    """D7 / SPEC Q1: inherit A's Desktop Project; returns (project_meta, toolsets, board).
+
+    Hermes derives a session's project from its cwd (projects_db.project_for_path),
+    so B is assigned by cwd; if B's cwd is not owned by A's project, B is told to
+    switch itself (seed fallback).
+    """
+    a_project = _project_for_path(base_cwd)
+    project_meta: Optional[dict[str, Any]] = None
+    if a_project is not None:
+        b_project = _project_for_path(child_cwd)
+        project_meta = a_project.to_meta()
+        project_meta["assignment"] = (
+            "cwd" if b_project is not None and b_project.id == a_project.id else "seed_switch"
+        )
+        # The fallback needs the `project` toolset in B (A is a desktop session
+        # and has it, so this never exceeds A's rights — D12).
+        if (project_meta["assignment"] == "seed_switch" and allowed_toolsets is not None
+                and "project" not in allowed_toolsets):
+            allowed_toolsets = [*allowed_toolsets, "project"]
+    kanban_board = (a_project.board if a_project is not None and a_project.board
+                    else _resolve_kanban_board())
+    return project_meta, allowed_toolsets, kanban_board
+
+
+def start_child(
+    h: Any,
+    *,
+    index: state_mod.StateIndex,
+    settings: Settings,
+    parent_source: str,
+    by: str,
+) -> dict[str, Any]:
+    """Create B for a ``running`` handover: session.create, index, seed, broadcast.
+
+    Shared by the agent tool (immediate start) and the desktop backend (user
+    spawn from ⌘K, confirmation of a ``proposed`` card). The handover file must
+    already carry the final title/model/effort/cwd/worktree and status
+    ``running``.
+    """
+    assert h.path is not None
+    handover_path = Path(h.path)
+    from .handover import write as handover_write
+
+    title = h.title
+    model_ref = h.meta["model"]
+    provider, model_name = split_model_ref(model_ref)
+    child_effort = h.meta.get("effort")
+    child_cwd = h.meta.get("cwd")
+    wt_info = h.meta.get("worktree")
+    project_meta = h.meta.get("project")
+    parent_session_id = h.meta["parent_session_id"]
+
     # ---- create the child session (gateway session.create)
     child_title = settings.title_prefix + title
     try:
@@ -408,15 +458,15 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
             model=model_name,
             provider=provider,
             reasoning_effort=child_effort,
-            parent_session_id=a.session_id,
+            parent_session_id=parent_session_id,
             idempotency_key=h.handover_id,
-            source=a.source,  # B lives on A's surface (D13)
+            source=parent_source,  # B lives on A's surface (D13)
         )
     except gateway.GatewayError as exc:
         # The handover file is authoritative: a failed create must not leave a
         # 'running' record without a child session. Abandon it with the reason.
         try:
-            update_status(handover_path, "abandoned", by="agent", reason=f"session.create failed: {exc}")
+            update_status(handover_path, "abandoned", by=by, reason=f"session.create failed: {exc}")
         except HandoverError:
             logger.exception("could not abandon handover %s after create failure", h.handover_id)
         if wt_info is not None:
@@ -433,7 +483,7 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
     handover_write(h)
     index.register_child(
         [child_stored, child_runtime],
-        handover_path=handover_path, parent_session_id=a.session_id, status="running",
+        handover_path=handover_path, parent_session_id=parent_session_id, status="running",
     )
 
     # ---- start B's first turn with the seed message (SPEC section 5).
@@ -453,8 +503,9 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
     _broadcast_event("child.created", {
         "handover_id": h.handover_id,
         "child_session_id": child_stored,
-        "parent_session_id": a.session_id,
+        "parent_session_id": parent_session_id,
         "title": title,
+        "initiator": h.meta.get("initiator"),
         "model": model_ref,
         "cwd": child_cwd,
         "worktree": wt_info,

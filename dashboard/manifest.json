@@ -1,0 +1,8 @@
+{
+  "name": "spawn-session",
+  "label": "Spawn session",
+  "description": "Backend for the spawn-session desktop half: ⌘K spawn and proposal cards.",
+  "version": "0.1.0",
+  "tab": { "path": "/spawn-session", "hidden": true },
+  "api": "plugin_api.py"
+}

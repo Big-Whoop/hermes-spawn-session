@@ -11,8 +11,24 @@ and report their results back to the main conversation.
 
 ## Status
 
-**Pre-spec.** Research is complete (see below); the project specification
-happens in a dedicated session. No code yet.
+Backend tool `spawn_session` (agent-initiated) plus the desktop half
+(⌘K "Spawn session with report" and the confirmation card for agent
+`own_initiative` proposals). Report-back, status cards and sidebar
+presentation are follow-up cards.
+
+## Install (Hermes Desktop)
+
+1. Link or copy this repository to `~/.hermes/plugins/spawn-session/`
+   (unified package: agent half, `dashboard/` backend, `desktop/plugin.js`).
+2. Add `spawn-session` to `plugins.enabled` in `config.yaml` and restart the
+   gateway (the REST backend mounts at startup).
+3. In Desktop: Capabilities → Plugins → enable **Spawn session** (the desktop
+   half ships opt-in per Hermes policy) — use **Rescan** if it is not listed.
+4. ⌘K → **Spawn session with report**.
+
+Checks without Desktop: `pytest` (Python half and REST routes) and
+`node scripts/smoke_desktop_plugin.mjs` (desktop half loads, registers its
+contributions, uses only allowed imports, no hardcoded colours).
 
 - Research archive: [`.hermes/research/`](.hermes/research/)
 - Kanban board: `hermes-spawn-session` (2-lane: `default` / `reviewer`)
