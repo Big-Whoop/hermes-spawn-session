@@ -318,7 +318,10 @@ proposed ──confirm──▶ running ──report──▶ reported ──inj
 - A: status card per child (running / reported / delivered / abandoned /
   detached) with buttons Open, Abort, Detach; `proposed` card with title, task,
   context, model selector, Start / Decline.
-- Sidebar: `↳` title prefix, leading badge, ordering after A (Q3).
+- Sidebar: `↳` title prefix and leading badge (Q3). Ordering after A is NOT
+  applied (card t_1f857d7f): `host.sessions.reorder()` replaces the whole manual
+  Recents order and the SDK cannot read it, so reordering would clobber the
+  user's own order.
 - Reopen of A with `reported` children: banner "N open report(s)" → Deliver.
 
 ## 8. Config keys (`plugins.entries.spawn-session.*`)
