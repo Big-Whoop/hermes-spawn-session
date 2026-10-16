@@ -1,0 +1,73 @@
+{
+  "commit": "5dfff0c198bbc3e65c4f3b385136803caccd7521",
+  "ephemeral_home": "/opt/data/cache/scratch/spawn-report-live-ea785hcr",
+  "model": "custom:live:model",
+  "base_url": "http://ryzen.lan.fahsel.ch:8080/v1",
+  "registered_commands": [
+    "abandon",
+    "detach",
+    "report",
+    "spawn-cleanup"
+  ],
+  "parent_session": {
+    "runtime_id": "f5c6e132",
+    "stored_id": "20261016_185542_f1f311"
+  },
+  "spawn_result": {
+    "ok": true,
+    "handover_id": "hs_20261016_d976b2",
+    "status": "running",
+    "child_session_id": "20261016_185547_4ab67c",
+    "handover_path": "/opt/data/cache/scratch/spawn-report-live-work-h86mdtxu/project/.hermes/handovers/2026-10-16-live-report-child.md"
+  },
+  "report_back_result": {
+    "ok": true,
+    "handover_id": "hs_20261016_d976b2",
+    "status": "reported",
+    "report_number": 1,
+    "delivery": "queued",
+    "note": "Report queued for the parent session; it runs a turn on it when idle (status becomes 'delivered' once it appears in the parent's history).",
+    "handover_path": "/opt/data/cache/scratch/spawn-report-live-work-h86mdtxu/project/.hermes/handovers/2026-10-16-live-report-child.md"
+  },
+  "reports_in_handover": 1,
+  "parent_messages": [
+    {
+      "role": "user",
+      "content": "You are the parent session of a report-back live test.",
+      "ts": 1792169745.9859307
+    },
+    {
+      "role": "assistant",
+      "content": "Understood.",
+      "ts": 1792169745.9859316
+    },
+    {
+      "role": "user",
+      "content": "[spawn-session report: Live report child (hs_20261016_d976b2)]\n## Result\nLive child finished: replied CHILD-OK.\n\n## Changes\n- none (live test)\n\n## Open items\n- parent: acknowledge with the exact word REPORT-RECEIVED\n\n## Artifacts\n- path: /opt/data/cache/scratch/spawn-report-live-work-h86mdtxu/projec",
+      "ts": 1792169763.4673486
+    },
+    {
+      "role": "assistant",
+      "content": "REPORT-RECEIVED",
+      "ts": 1792169766.16565
+    }
+  ],
+  "report_delivered_status": "delivered",
+  "handover_history": [
+    {
+      "at": "2026-10-16T18:56:02+02:00",
+      "from": "running",
+      "to": "reported",
+      "by": "agent"
+    },
+    {
+      "at": "2026-10-16T18:56:05+02:00",
+      "from": "reported",
+      "to": "delivered",
+      "by": "plugin"
+    }
+  ],
+  "parent_turn_ran": true,
+  "seconds_to_delivered": 4.4,
+  "marker_in_parent_history": true
+}

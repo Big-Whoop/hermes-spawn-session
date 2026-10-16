@@ -12,6 +12,7 @@ import pytest
 
 from spawn_session import gateway, tools
 from spawn_session import parent as parent_mod
+from spawn_session import project as project_mod
 from spawn_session import state as state_mod
 from spawn_session import worktree as worktree_mod
 from spawn_session.config import Settings
@@ -127,6 +128,7 @@ def _reset_tools_seams():
     tools._create_worktree = worktree_mod.create_worktree
     tools._broadcast_event = tools._default_broadcast
     tools._lineage_ids = parent_mod.lineage_ids
+    tools._project_for_path = project_mod.project_for_path
     tools.set_settings_override(None)
     _guard_cache_clear()
 

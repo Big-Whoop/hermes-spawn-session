@@ -71,6 +71,7 @@ _KEY_ORDER = (
     "cwd",
     "worktree",
     "kanban_board",
+    "project",
     "allowed_toolsets",
     "created_at",
     "updated_at",
@@ -266,6 +267,7 @@ def create(
     worktree: dict[str, str] | None = None,
     kanban_board: str | None = None,
     allowed_toolsets: list[str] | None = None,
+    project: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> Handover:
     """Create a new handover file in ``base_dir`` and return it.
@@ -300,6 +302,7 @@ def create(
         "cwd": cwd or os.getcwd(),
         "worktree": dict(worktree) if worktree else None,
         "kanban_board": kanban_board,
+        "project": dict(project) if project else None,
         "allowed_toolsets": list(allowed_toolsets) if allowed_toolsets is not None else None,
         "created_at": ts,
         "updated_at": ts,
@@ -387,11 +390,12 @@ def append_report(
 ) -> Handover:
     """Append a Report section and move the handover to ``reported``.
 
-    Allowed from ``running`` (first report) and ``delivered`` (follow-up,
-    rendered as ``# Report (2)`` etc.).
+    Allowed from ``running`` (first report), ``delivered`` (follow-up,
+    rendered as ``# Report (2)`` etc.) and ``reported`` (a follow-up written
+    before the previous report was delivered; status stays ``reported``).
     """
     h = read(path)
-    if not can_transition(h.status, "reported"):
+    if h.status != "reported" and not can_transition(h.status, "reported"):
         raise InvalidTransition(f"cannot report from status {h.status!r}")
     ts = _now()
     h.reports.append(report)

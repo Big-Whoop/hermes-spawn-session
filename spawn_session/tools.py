@@ -16,7 +16,9 @@ Rule summary (see SPEC.md section 4.1 for the canonical text):
   count as most expensive.
 - D3: ``own_initiative`` always starts as ``proposed`` (no session created);
   ``user_asked`` starts immediately unless the cost or cap rule applies.
-- D7: default cwd = A's cwd; ``worktree: true`` (immediate start only; proposals
+- D7: B inherits A's Desktop Project (derived from cwd, see :mod:`.project`;
+  seed-message ``desktop_project switch`` fallback) and its bound board.
+  Default cwd = A's cwd; ``worktree: true`` (immediate start only; proposals
   record ``worktree_requested`` and create nothing) creates a git worktree +
   branch ``spawn/<slug>`` and B's cwd becomes it. The Kanban board is resolved
   by name and passed in the seed message (never mutated globally).
@@ -34,7 +36,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import gateway, parent as parent_mod, seed as seed_mod, state as state_mod, worktree as wt_mod
+from . import gateway, parent as parent_mod, project as project_mod, seed as seed_mod, state as state_mod, worktree as wt_mod
 from .config import Settings
 from .handover import HandoverError, create as handover_create, read as handover_read, update_status
 
@@ -60,6 +62,7 @@ _find_repo_root: Callable[[str | Path], Path] = wt_mod.find_repo_root
 _create_worktree: Callable[..., wt_mod.Worktree] = wt_mod.create_worktree
 _broadcast_event: Callable[[str, dict], None] = _default_broadcast
 _lineage_ids: Callable[[str], list[str]] = parent_mod.lineage_ids
+_project_for_path: Callable[[Optional[str]], Optional[project_mod.ProjectInfo]] = project_mod.project_for_path
 
 
 def _child_in_lineage(index: state_mod.StateIndex, session_id: str) -> Optional[str]:
@@ -327,6 +330,8 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         wt_info = {"path": wt.path, "branch": wt.branch}
         child_cwd = wt.path
 
+    project_meta, allowed_toolsets, kanban_board = plan_project(base_cwd, child_cwd, allowed_toolsets)
+
     # ---- handover file (authoritative record, SPEC section 5)
     base_dir = _handover_base_dir(a.cwd)
     h = handover_create(
@@ -343,8 +348,9 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         initiation=initiation,
         initiator="agent",
         worktree=wt_info,
-        kanban_board=_resolve_kanban_board(),
+        kanban_board=kanban_board,
         allowed_toolsets=allowed_toolsets,
+        project=project_meta,
     )
     assert h.path is not None  # handover_create always sets the path
     handover_path = Path(h.path)
@@ -386,6 +392,35 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
     return start_child(h, index=index, settings=settings, parent_source=a.source, by="agent")
 
 
+def plan_project(
+    base_cwd: Optional[str],
+    child_cwd: Optional[str],
+    allowed_toolsets: Optional[list[str]],
+) -> tuple[Optional[dict[str, Any]], Optional[list[str]], Optional[str]]:
+    """D7 / SPEC Q1: inherit A's Desktop Project; returns (project_meta, toolsets, board).
+
+    Hermes derives a session's project from its cwd (projects_db.project_for_path),
+    so B is assigned by cwd; if B's cwd is not owned by A's project, B is told to
+    switch itself (seed fallback).
+    """
+    a_project = _project_for_path(base_cwd)
+    project_meta: Optional[dict[str, Any]] = None
+    if a_project is not None:
+        b_project = _project_for_path(child_cwd)
+        project_meta = a_project.to_meta()
+        project_meta["assignment"] = (
+            "cwd" if b_project is not None and b_project.id == a_project.id else "seed_switch"
+        )
+        # The fallback needs the `project` toolset in B (A is a desktop session
+        # and has it, so this never exceeds A's rights — D12).
+        if (project_meta["assignment"] == "seed_switch" and allowed_toolsets is not None
+                and "project" not in allowed_toolsets):
+            allowed_toolsets = [*allowed_toolsets, "project"]
+    kanban_board = (a_project.board if a_project is not None and a_project.board
+                    else _resolve_kanban_board())
+    return project_meta, allowed_toolsets, kanban_board
+
+
 def start_child(
     h: Any,
     *,
@@ -411,6 +446,7 @@ def start_child(
     child_effort = h.meta.get("effort")
     child_cwd = h.meta.get("cwd")
     wt_info = h.meta.get("worktree")
+    project_meta = h.meta.get("project")
     parent_session_id = h.meta["parent_session_id"]
 
     # ---- create the child session (gateway session.create)
@@ -473,6 +509,7 @@ def start_child(
         "model": model_ref,
         "cwd": child_cwd,
         "worktree": wt_info,
+        "project": project_meta,
         "handover_path": str(handover_path),
     })
 
@@ -481,6 +518,7 @@ def start_child(
         "handover_id": h.handover_id,
         "status": "running",
         "child_session_id": child_stored,
+        "project": project_meta,
         "handover_path": str(handover_path),
     }
 
@@ -516,6 +554,62 @@ def set_settings_override(settings: Optional[Settings]) -> None:
     _settings_override = settings
 
 
+# --------------------------------------------------------------------------- report_back (D4, SPEC 4.2)
+
+REPORT_BACK_SCHEMA: dict[str, Any] = {
+    "name": "report_back",
+    "description": (
+        "Only in a session spawned by spawn_session: send a structured report back to the "
+        "parent session (appended to the handover file; the parent runs a turn on it). "
+        "The session stays open; call again for a follow-up report."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "result": {"type": "string", "description": "What was achieved (summary)."},
+            "changes": {"type": "array", "items": {"type": "string"}},
+            "open_items": {"type": "array", "items": {"type": "string"}},
+            "artifacts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"type": "string", "enum": ["path", "commit", "branch", "url", "pr"]},
+                        "value": {"type": "string"},
+                    },
+                    "required": ["kind", "value"],
+                },
+            },
+        },
+        "required": ["result"],
+    },
+}
+
+NOT_A_CHILD_MESSAGE = (
+    "report_back is only available in a session spawned by spawn_session; this session has "
+    "no parent to report to."
+)
+
+
+def report_back_handler(args: dict[str, Any], **kwargs: Any) -> str:
+    """Tool handler for ``report_back``. Returns a JSON string (tool contract)."""
+    from . import lifecycle
+
+    try:
+        session_id = str(kwargs.get("session_id") or "")
+        index = _load_index()
+        child_id = _child_in_lineage(index, session_id) if session_id else None
+        path = index.handover_for(child_id) if child_id else None
+        if path is None:
+            return json.dumps({"ok": False, "error": NOT_A_CHILD_MESSAGE})
+        return json.dumps(lifecycle.report(path, args or {}, by="agent", settings=_settings()))
+    except (lifecycle.LifecycleError, HandoverError) as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+    except Exception as exc:  # tool contract: never raise, always JSON
+        logger.exception("report_back failed")
+        return json.dumps({"ok": False, "error": f"internal error: {exc}"})
+
+
 # --------------------------------------------------------------------------- pre_tool_call guard (D10/D12)
 
 _guard_cache: dict[str, tuple[float, Optional[list[str]]]] = {}
@@ -525,9 +619,9 @@ _GUARD_TTL_S = 2.0
 def toolset_guard(**kwargs: Any) -> Optional[dict]:
     """``pre_tool_call`` hook: enforce child-session restrictions.
 
-    - D10/D12: our own tools (``spawn_session``, later ``report_back``) are
-      never available in a spawned child session — the handler refuses anyway,
-      this blocks them before execution for narrowed children as well.
+    - D10/D12: ``spawn_session`` is never available in a spawned child
+      session — the handler refuses anyway, this blocks it before execution.
+      ``report_back`` is the child's own tool and is never narrowed away.
     - D12: when the handover carries ``allowed_toolsets``, any tool whose
       toolset is not in that list is blocked with an explanatory message.
     """
@@ -543,8 +637,10 @@ def toolset_guard(**kwargs: Any) -> Optional[dict]:
     if child_id is None:
         return None
     handover_path = index.handover_for(child_id)
-    if tool_name in ("spawn_session", "report_back"):
+    if tool_name == "spawn_session":
         return {"action": "block", "message": D10_MESSAGE}
+    if tool_name == "report_back":
+        return None  # child-only tool: always allowed here; the handler checks status
     if handover_path is None:
         return None
     allowed = _allowed_toolsets_cached(handover_path)

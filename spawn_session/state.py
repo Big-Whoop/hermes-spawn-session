@@ -125,6 +125,31 @@ class StateIndex:
         data["children"] = children
         self._write(data)
 
+    def set_status(self, handover_path: Path | str, status: str) -> None:
+        """Mirror a handover's status onto every index entry pointing at it."""
+        key = str(handover_path)
+        data = self._read_raw()
+        children = data.get("children")
+        if not isinstance(children, dict):
+            return
+        changed = False
+        for entry in children.values():
+            if isinstance(entry, dict) and entry.get("handover_path") == key:
+                entry["status"] = status
+                changed = True
+        if changed:
+            self._write(data)
+
+    def handovers_for_parent(self, parent_session_id: str) -> list[Path]:
+        """Distinct existing handover files whose child belongs to ``parent_session_id``."""
+        seen: dict[str, Path] = {}
+        for entry in self.children.values():
+            if entry.get("parent_session_id") == parent_session_id:
+                p = entry.get("handover_path")
+                if isinstance(p, str):
+                    seen.setdefault(p, Path(p))
+        return list(seen.values())
+
     def remove_child(self, *session_ids: str) -> None:
         data = self._read_raw()
         children = data.get("children")

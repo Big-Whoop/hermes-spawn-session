@@ -170,18 +170,19 @@ def test_append_report_and_follow_up(tmp_path):
     assert "# Report\n## Result\nFixed.\n\n## Changes\ntests/x.py\n\n## Open items\n-\n\n## Artifacts\nPR #3" in text
     assert ho.report_heading(r) == "Report"
 
-    with pytest.raises(ho.InvalidTransition):  # reported -> reported not allowed
-        ho.append_report(h.path, "again")
+    # SPEC 4.2: a follow-up before delivery is allowed; status stays reported.
+    r = ho.append_report(h.path, ho.format_report("Before delivery."))
+    assert r.status == "reported" and len(r.reports) == 2
 
     ho.update_status(h.path, "delivered")
     r = ho.append_report(h.path, ho.format_report("Follow-up."))
     assert r.status == "reported"
-    assert len(r.reports) == 2
-    assert "# Report (2)\n## Result\nFollow-up." in h.path.read_text()
-    assert ho.report_heading(r) == "Report (2)"
+    assert len(r.reports) == 3
+    assert "# Report (3)\n## Result\nFollow-up." in h.path.read_text()
+    assert ho.report_heading(r) == "Report (3)"
     parsed = ho.read(h.path)
     assert parsed.reports == r.reports
-    assert [e["to"] for e in parsed.meta["history"]] == ["reported", "delivered", "reported"]
+    assert [e["to"] for e in parsed.meta["history"]] == ["reported", "reported", "delivered", "reported"]
 
 
 def test_append_report_from_proposed_rejected(tmp_path):

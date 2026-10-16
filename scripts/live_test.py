@@ -134,6 +134,15 @@ def main() -> int:
     log(f"plugin loaded; spawn_session tool registered "
         f"(toolset={evidence['plugin_tool_registered']['toolset']})")
 
+    # --- a real Desktop Project owning the repo, bound to a board (D7 / SPEC Q1) ---
+    from hermes_cli import projects_db as pdb  # noqa: E402
+
+    with pdb.connect_closing() as conn:
+        project_id = pdb.create_project(conn, name="Live Spawn Project", folders=[str(project)],
+                                        primary_path=str(project), board_slug="live-board")
+    evidence["desktop_project"] = {"id": project_id, "board": "live-board"}
+    log(f"desktop project created: {project_id}")
+
     # --- create parent A (desktop source, seeded so the DB row exists) ---
     a = rpc("session.create", {
         "title": "LIVE: spawn-session parent",
@@ -219,6 +228,16 @@ def main() -> int:
     }
     evidence["seed_message_persisted"] = seed_seen
 
+    # --- B's project as Hermes itself reports it (projects.for_cwd RPC + CLI) ---
+    b_proj = rpc("projects.for_cwd", {"cwd": b_row["cwd"]}).get("project") or {}
+    cli = subprocess.run([os.environ.get("HERMES_BIN", "/opt/hermes/bin/hermes"), "project", "show",
+                          b_proj.get("id") or "-"], capture_output=True, text=True,
+                         env={**os.environ, "HERMES_HOME": str(home)})
+    evidence["child_project"] = {
+        "for_cwd": {k: b_proj.get(k) for k in ("id", "slug", "name", "board_slug")},
+        "hermes_project_show": (cli.stdout or cli.stderr).strip(),
+    }
+
     if args.run_turn:
         deadline3 = time.time() + args.turn_timeout
         done = False
@@ -252,10 +271,13 @@ def main() -> int:
     log(f"evidence written: {out}")
     print(json.dumps({k: evidence[k] for k in
                       ("commit", "parent_session", "spawn_result", "child_session_row",
-                       "seed_message_persisted", "plugin_tool_registered")},
+                       "seed_message_persisted", "plugin_tool_registered", "desktop_project",
+                       "child_project")},
                      indent=2, ensure_ascii=False))
 
     ok = (result["status"] == "running"
+          and evidence["child_project"]["for_cwd"]["id"] == project_id
+          and (result.get("project") or {}).get("assignment") == "cwd"
           and evidence["child_session_row"]["source"] == "desktop"
           and evidence["child_session_row"]["parent_session_id"] == a_stored
           and evidence["child_session_row"]["model"])

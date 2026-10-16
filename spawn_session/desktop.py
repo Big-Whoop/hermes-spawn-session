@@ -213,6 +213,7 @@ def user_spawn(body: dict[str, Any]) -> dict[str, Any]:
         wt_info = {"path": wt.path, "branch": wt.branch}
         child_cwd = wt.path
 
+    project_meta, _, kanban_board = tools.plan_project(base_cwd, child_cwd, None)
     h = handover_create(
         tools._handover_base_dir(a.cwd),
         title=title,
@@ -227,7 +228,8 @@ def user_spawn(body: dict[str, Any]) -> dict[str, Any]:
         initiation="user_asked",
         initiator="user",
         worktree=wt_info,
-        kanban_board=tools._resolve_kanban_board(),
+        kanban_board=kanban_board,
+        project=project_meta,
     )
     assert h.path is not None
     try:
@@ -306,6 +308,13 @@ def confirm_proposal(body: dict[str, Any]) -> dict[str, Any]:
         )
         h.meta["worktree"] = {"path": wt.path, "branch": wt.branch}
         h.meta["cwd"] = wt.path
+        # D7: the project assignment was planned for A's cwd; re-plan for the
+        # worktree (the board stays as recorded in the proposal).
+        if h.meta.get("project"):
+            project_meta, toolsets, _ = tools.plan_project(
+                str(base_cwd) if base_cwd else None, wt.path, h.meta.get("allowed_toolsets"))
+            h.meta["project"] = project_meta
+            h.meta["allowed_toolsets"] = toolsets
     handover_write(h)
     update_status(path, "running", by="user", reason="confirmed in desktop card")
     h = handover_read(path)
