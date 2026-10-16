@@ -41,6 +41,7 @@ def _resolve_handle_request() -> Callable[[dict], dict | None]:
     if _handle_request_override is not None:
         return _handle_request_override
     try:
+        # Private seam, no public alternative (SPEC 3.1, catalog rule 9).
         # server.py rebinds split-module handlers onto its own namespace; the
         # raw tui_gateway.rpc_dispatch.handle_request lacks those globals.
         from tui_gateway.server import handle_request

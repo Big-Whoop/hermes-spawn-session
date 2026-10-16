@@ -29,6 +29,8 @@ logger = logging.getLogger("hermes.spawn-session")
 
 
 def _default_current_session() -> str:
+    # Private seam, no public alternative (SPEC 3.1, catalog rule 9): command
+    # handlers get only raw_args. Guarded: falls back to os.environ.
     try:
         from gateway.session_context import get_session_env
 
