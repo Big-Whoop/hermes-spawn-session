@@ -16,7 +16,9 @@ Rule summary (see SPEC.md section 4.1 for the canonical text):
   count as most expensive.
 - D3: ``own_initiative`` always starts as ``proposed`` (no session created);
   ``user_asked`` starts immediately unless the cost or cap rule applies.
-- D7: default cwd = A's cwd; ``worktree: true`` (immediate start only; proposals
+- D7: B inherits A's Desktop Project (derived from cwd, see :mod:`.project`;
+  seed-message ``desktop_project switch`` fallback) and its bound board.
+  Default cwd = A's cwd; ``worktree: true`` (immediate start only; proposals
   record ``worktree_requested`` and create nothing) creates a git worktree +
   branch ``spawn/<slug>`` and B's cwd becomes it. The Kanban board is resolved
   by name and passed in the seed message (never mutated globally).
@@ -34,7 +36,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import gateway, parent as parent_mod, seed as seed_mod, state as state_mod, worktree as wt_mod
+from . import gateway, parent as parent_mod, project as project_mod, seed as seed_mod, state as state_mod, worktree as wt_mod
 from .config import Settings
 from .handover import HandoverError, create as handover_create, read as handover_read, update_status
 
@@ -60,6 +62,7 @@ _find_repo_root: Callable[[str | Path], Path] = wt_mod.find_repo_root
 _create_worktree: Callable[..., wt_mod.Worktree] = wt_mod.create_worktree
 _broadcast_event: Callable[[str, dict], None] = _default_broadcast
 _lineage_ids: Callable[[str], list[str]] = parent_mod.lineage_ids
+_project_for_path: Callable[[Optional[str]], Optional[project_mod.ProjectInfo]] = project_mod.project_for_path
 
 
 def _child_in_lineage(index: state_mod.StateIndex, session_id: str) -> Optional[str]:
@@ -327,6 +330,25 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         wt_info = {"path": wt.path, "branch": wt.branch}
         child_cwd = wt.path
 
+    # ---- D7 / SPEC Q1: inherit A's Desktop Project. Hermes derives a session's
+    # project from its cwd (projects_db.project_for_path), so B is assigned by
+    # cwd; if B's cwd is not owned by A's project, B is told to switch itself.
+    a_project = _project_for_path(base_cwd)
+    project_meta: Optional[dict[str, Any]] = None
+    if a_project is not None:
+        b_project = _project_for_path(child_cwd)
+        project_meta = a_project.to_meta()
+        project_meta["assignment"] = (
+            "cwd" if b_project is not None and b_project.id == a_project.id else "seed_switch"
+        )
+        # The fallback needs the `project` toolset in B (A is a desktop session
+        # and has it, so this never exceeds A's rights — D12).
+        if (project_meta["assignment"] == "seed_switch" and allowed_toolsets is not None
+                and "project" not in allowed_toolsets):
+            allowed_toolsets = [*allowed_toolsets, "project"]
+    kanban_board = (a_project.board if a_project is not None and a_project.board
+                    else _resolve_kanban_board())
+
     # ---- handover file (authoritative record, SPEC section 5)
     base_dir = _handover_base_dir(a.cwd)
     h = handover_create(
@@ -343,8 +365,9 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         initiation=initiation,
         initiator="agent",
         worktree=wt_info,
-        kanban_board=_resolve_kanban_board(),
+        kanban_board=kanban_board,
         allowed_toolsets=allowed_toolsets,
+        project=project_meta,
     )
     assert h.path is not None  # handover_create always sets the path
     handover_path = Path(h.path)
@@ -435,6 +458,7 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         "model": model_ref,
         "cwd": child_cwd,
         "worktree": wt_info,
+        "project": project_meta,
         "handover_path": str(handover_path),
     })
 
@@ -443,6 +467,7 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
         "handover_id": h.handover_id,
         "status": "running",
         "child_session_id": child_stored,
+        "project": project_meta,
         "handover_path": str(handover_path),
     }
 

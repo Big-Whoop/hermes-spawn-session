@@ -10,6 +10,7 @@ assembles the full seed message.
 from __future__ import annotations
 
 from .handover import Handover, child_first_message
+from .project import ProjectInfo, switch_instruction
 
 
 def build_seed_message(
@@ -22,7 +23,13 @@ def build_seed_message(
     ``kanban_board`` defaults to the handover frontmatter value (SPEC Q1: the
     board is passed by name, never mutated globally).
     """
-    parts = [child_first_message(h)]
+    parts = []
+    project = h.meta.get("project")
+    if isinstance(project, dict) and project.get("assignment") == "seed_switch" and project.get("id"):
+        # D7 fallback: B's cwd is outside A's project; B moves itself first.
+        parts.append(switch_instruction(ProjectInfo(
+            id=str(project["id"]), slug=str(project.get("slug") or ""), name=str(project.get("name") or project["id"]))))
+    parts.append(child_first_message(h))
     worktree = h.meta.get("worktree")
     if isinstance(worktree, dict) and worktree.get("path"):
         parts.append(

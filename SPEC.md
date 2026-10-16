@@ -19,40 +19,59 @@ Docs consulted (all fetched 2026-10-16): desktop-plugin-sdk [S1], user-guide/des
 [S2], developer-guide/plugins [S3], programmatic-integration [S4],
 user-guide/features/plugins [S5], user-guide/sessions [S6],
 user-guide/features/kanban [S7], subagent-lifecycle-api [S8]. Hermes source was
-NOT read for this card; source-derived facts come from the existing research
+NOT read for the original card (Q1 was later corrected from source, see Q1); source-derived facts come from the existing research
 archive (`REPORT-spawn-with-report-de.md`, refs [58]–[62]) and are marked as such.
 
 ### Q1 — Assign A's Desktop project / repo / Kanban board to B
 
-Findings:
-- Desktop "Projects" are not an assignable session attribute in any documented
-  API. The sidebar's Projects are discovered Git repositories plus "explicit
-  projects and repositories inferred from intentional Hermes sessions"; with
-  **Group by → Projects** sessions are grouped under their project [S2 §Repository
-  discovery]. A chat's workspace changes via "the folder picker, or a project
-  switch" or by following the agent into a worktree lane [S2 §Review/Worktrees].
-- The desktop plugin SDK exposes no project setter (`host.*` surface enumerated:
-  `openSession`, `newChat`, `sessions.pin/reorder/reorderPinned/setColor`,
-  `composer.*`, `request`, …; no project API) [S1 §host].
-- `session.create` accepts `cwd` (research ref [58], source) and per-session
-  `model`/`provider` overrides [S4 §Model overrides on session.create].
-- Kanban boards carry a **project directory** (`default_workdir`) and optional
-  Project selector [S7 §Switching boards in the Desktop app]. Board resolution:
-  `--board` → `HERMES_KANBAN_BOARD` env → `~/.hermes/kanban/current` → `default`
-  [S7 §Boards].
+Correction (card t_eec9aafd): the earlier answer ("unresolved, infer project
+from the repository") was wrong. Hermes has first-class **Desktop Projects**
+(tool `desktop_project`, toolset `project`, actions create/switch/list [S9];
+CLI `hermes project create|list|show|use|bind-board` — "State is per-profile"
+[S10]; Kanban boards bind to a project [S7]). The docs do not say how a plugin
+assigns a project to *another* session, so — with user approval — Hermes source
+(/opt/hermes, read-only, Hermes v0.22.2) was consulted:
 
-Answer: **Unresolved as a direct API.** Fallback (adopted):
-1. Create B with `cwd = A.cwd` (or the new worktree path, which Desktop shows as a
-   lane under the same project [S2]). Project membership is then *inferred* by
-   Desktop from the repository, which yields the same project grouping.
-2. The Kanban board is passed **by name**: the plugin resolves A's board
-   (`HERMES_KANBAN_BOARD` if set, else `kanban/current`) and writes it into the
-   handover frontmatter (`kanban_board`) and the seed message ("Kanban board for
-   this task: `<slug>` — pass `board=<slug>` to kanban tools"). No global
-   `kanban/current` mutation.
-3. Card 2 acceptance includes an empirical check that B appears under A's
-   project with Group by → Projects. If it does not, the result is logged as a
-   follow-up upstream request (#125346-style create-time hook).
+Findings (source):
+- Projects live in the per-profile SQLite `$HERMES_HOME/projects.db`, tables
+  `projects` (id, slug, name, `board_slug`, `primary_path`, archived, …) and
+  `project_folders` (project_id, path, is_primary)
+  [`hermes_cli/projects_db.py:23-60`].
+- **There is no per-session project field.** A session's project is *derived
+  from its cwd*: `project_for_path(conn, path)` returns the non-archived project
+  whose folder equals or is an ancestor of the path, innermost folder wins
+  [`hermes_cli/projects_db.py:462-477`]. The same lookup feeds
+  `desktop_project list` (`_calling_session_project_id`,
+  [`tools/project_tools.py:74-85`]), session.info / status bar
+  (`_project_info_for_cwd`, [`tui_gateway/server.py:2296-2310`]) and the RPC
+  `projects.for_cwd` [`tui_gateway/methods_projects.py:123-130`].
+- `desktop_project switch` resolves the project and only **re-anchors the live
+  session's cwd** to the project's primary path via the GUI-gateway callback
+  [`tools/project_tools.py:135-145`, `:40-46`] →
+  `_apply_project_workspace` sets `cwd`/`explicit_cwd`, persists it and emits
+  session.info [`tui_gateway/agent_callbacks.py:194-221`, wired at `:258`].
+  Outside a GUI session it moves the profile-global `active_id` pointer instead
+  [`hermes_cli/projects_db.py:390-400`] — which must not be touched for B.
+- The project's bound board is `projects.board_slug` (`hermes project
+  bind-board`, [`hermes_cli/projects_cmd.py:212-216`]).
+
+Answer (implemented in `spawn_session/project.py` + `tools.py`):
+1. **Resolve A's project** = `project_for_path(A.cwd)` (read-only re-implementation
+   of the Hermes lookup on `projects.db`, opened `mode=ro`).
+2. **Assign to B by cwd**: `session.create` with `cwd` (A's cwd or a worktree
+   inside it, `cwd_explicit=true`) — the exact state `desktop_project switch`
+   produces. The plugin re-checks `project_for_path(B.cwd) == A.project`; then
+   `project.assignment = cwd`.
+3. **Fallback** when B's cwd is not owned by A's project (e.g. a worktree dir
+   outside every project folder): `project.assignment = seed_switch`; B's seed
+   message starts with an instruction to call `desktop_project` action=switch
+   name=`<A project id>`; `project` is added to a narrowed `allowed_toolsets`
+   (A, a desktop session, has it — never exceeds A's rights, D12).
+4. **Kanban board**: the project's `board_slug` if bound, else
+   `HERMES_KANBAN_BOARD` → `kanban/current` (as before). Passed by name in the
+   frontmatter (`kanban_board`) and seed message; no global mutation.
+5. The handover frontmatter records `project: {id, slug, name, board,
+   primary_path, assignment}` (null when A has no project).
 
 ### Q2 — Is a session from `session.create` visible as a top-level tab/row without a desktop plugin?
 
@@ -245,7 +264,8 @@ model: anthropic:claude-…
 effort: medium
 cwd: /path
 worktree: { path: /path/.worktrees/spawn-fix-flaky-test, branch: spawn/fix-flaky-test } | null
-kanban_board: hermes-spawn-session | null
+kanban_board: hermes-spawn-session | null   # project's bound board first
+project: { id, slug, name, board, primary_path, assignment: cwd|seed_switch } | null
 allowed_toolsets: [...] | null
 created_at: 2026-10-16T16:00:00+02:00
 updated_at: …
@@ -374,6 +394,8 @@ sharing one handover across profiles.
 - [S6] https://hermes-agent.nousresearch.com/docs/user-guide/sessions#session-sources
 - [S7] https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban#boards-multi-project
 - [S8] https://hermes-agent.nousresearch.com/docs/developer-guide/subagent-lifecycle-api
+- [S9] https://hermes-agent.nousresearch.com/docs/reference/tools-reference#project-toolset
+- [S10] https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-project
 - Research archive refs [58]–[62] (Hermes source, verified 2026-10-16 in the
   research phase): `tui_gateway/contracts/sessions.py` (`session.create` params
   incl. `cwd`, `title`, `parent_session_id`, `hidden`).
