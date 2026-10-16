@@ -550,6 +550,9 @@ async function openSpawnDialog() {
 export default {
   id: ID,
   name: 'Spawn session',
+  // Opt-in (decision Q3): the desktop half stays off until the user enables
+  // it in Desktop Capabilities -> Plugins.
+  defaultEnabled: false,
   register(ctx) {
     rest = ctx.rest
     ctx.onDispose(() => $dialog.set(null))
