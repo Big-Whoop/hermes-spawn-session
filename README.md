@@ -20,8 +20,14 @@ presentation are follow-up cards.
 
 1. Link or copy this repository to `~/.hermes/plugins/spawn-session/`
    (unified package: agent half, `dashboard/` backend, `desktop/plugin.js`).
-2. Add `spawn-session` to `plugins.enabled` in `config.yaml` and restart the
-   gateway (the REST backend mounts at startup).
+2. Enable it with `hermes plugins enable spawn-session` (or enable it in
+   Desktop) and accept the Python dependency consent: the plugin declares
+   `PyYAML>=6,<7` in `pyproject.toml` `[project].dependencies`, and Hermes
+   installs declared dependencies only after that consent ("discovery never
+   installs"). Adding `spawn-session` to `plugins.enabled` by hand bypasses
+   the consent step; loading then fails with `No module named 'yaml'`.
+   Then restart the gateway: the agent half and the REST backend load at
+   startup.
 3. In Desktop: Capabilities → Plugins → enable **Spawn session** (the desktop
    half ships opt-in per Hermes policy) — use **Rescan** if it is not listed.
 4. ⌘K → **Spawn session with report**.
