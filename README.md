@@ -126,7 +126,7 @@ A (your chat) ──spawn──▶ B "↳ Fix flaky test"  (own model/effort, sa
 
 - B starts in A's working directory.
 - **Worktree.** When the agent passes `worktree: true`, the plugin creates a
-  git worktree `<repo>/.worktrees/<slug>` on branch `spawn/<slug>`, and B
+  git worktree `<repo>/.worktrees/spawn-<slug>` on branch `spawn/<slug>`, and B
   works there. For a proposal, the worktree is only created when you click
   Start. The ⌘K dialog has no worktree option yet.
 - **Project.** B joins A's Hermes Desktop project. Hermes works out a session's
@@ -257,7 +257,7 @@ plugins:
         "anthropic:claude-opus": 10
 ```
 
-`handover_dir` is listed in SPEC.md §8, but the code does not read it yet.
+`handover_dir` is listed in SPEC.md §8, but setting it has no effect yet.
 Handover files always go to `.hermes/handovers`.
 
 ## Troubleshooting
@@ -290,7 +290,7 @@ Handover files always go to `.hermes/handovers`.
   desktop SDK has no API for nested rows.
 - Desktop sessions only. CLI and messaging surfaces are not supported (D13).
 - The ⌘K dialog has no worktree toggle.
-- `handover_dir` is not read yet (see Configuration).
+- `handover_dir` has no effect yet (see Configuration).
 - The full end-to-end check in a live Desktop is still pending (Kanban card
   `t_787f6427`). Automated tests cover the Python half, the REST routes and a
   Node smoke test of the desktop half.
