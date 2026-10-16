@@ -17,6 +17,7 @@ DEFAULT_WORKTREE_DIR = ".worktrees"
 DEFAULT_BRANCH_PREFIX = "spawn/"
 DEFAULT_TITLE_PREFIX = "\u21b3 "  # ↳
 DEFAULT_DETACHED_PREFIX = "Detached: "
+DEFAULT_DELIVERY_CONFIRM_TIMEOUT_S = 120
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class Settings:
     title_prefix: str = DEFAULT_TITLE_PREFIX
     detached_prefix: str = DEFAULT_DETACHED_PREFIX
     cost_rank: Mapping[str, int] = field(default_factory=dict)
+    delivery_confirm_timeout_s: int = DEFAULT_DELIVERY_CONFIRM_TIMEOUT_S
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any] | None) -> "Settings":
@@ -47,6 +49,9 @@ class Settings:
         if not isinstance(cost_rank, Mapping):
             cost_rank = {}
         cost_rank = {str(k): int(v) for k, v in cost_rank.items() if _is_int(v)}
+        timeout = raw.get("delivery_confirm_timeout_s", DEFAULT_DELIVERY_CONFIRM_TIMEOUT_S)
+        if not _is_int(timeout) or timeout <= 0:
+            timeout = DEFAULT_DELIVERY_CONFIRM_TIMEOUT_S
         values = {
             "max_children": max_children,
             "handover_dir": _str(raw.get("handover_dir"), DEFAULT_HANDOVER_DIR),
@@ -55,6 +60,7 @@ class Settings:
             "title_prefix": _str(raw.get("title_prefix"), DEFAULT_TITLE_PREFIX),
             "detached_prefix": _str(raw.get("detached_prefix"), DEFAULT_DETACHED_PREFIX),
             "cost_rank": cost_rank,
+            "delivery_confirm_timeout_s": timeout,
         }
         return cls(**values)
 

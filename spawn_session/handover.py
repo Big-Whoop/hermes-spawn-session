@@ -387,11 +387,12 @@ def append_report(
 ) -> Handover:
     """Append a Report section and move the handover to ``reported``.
 
-    Allowed from ``running`` (first report) and ``delivered`` (follow-up,
-    rendered as ``# Report (2)`` etc.).
+    Allowed from ``running`` (first report), ``delivered`` (follow-up,
+    rendered as ``# Report (2)`` etc.) and ``reported`` (a follow-up written
+    before the previous report was delivered; status stays ``reported``).
     """
     h = read(path)
-    if not can_transition(h.status, "reported"):
+    if h.status != "reported" and not can_transition(h.status, "reported"):
         raise InvalidTransition(f"cannot report from status {h.status!r}")
     ts = _now()
     h.reports.append(report)

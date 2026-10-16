@@ -534,10 +534,11 @@ class TestToolsetGuard:
         assert verdict is not None and verdict["action"] == "block"
         assert "one level only" in verdict["message"]
 
-    def test_report_back_blocked_in_child(self, desktop_parent, tmp_home):
-        self._register_child(desktop_parent, tmp_home)
-        verdict = tools.toolset_guard(tool_name="report_back", session_id="ses-b")
-        assert verdict is not None and verdict["action"] == "block"
+    def test_report_back_allowed_in_child(self, desktop_parent, tmp_home, fake_registry):
+        # report_back is the child's own tool: never blocked, even when narrowed.
+        fake_registry({"read_file": "file", "report_back": "spawn-session"})
+        self._register_child(desktop_parent, tmp_home, allowed=["file"])
+        assert tools.toolset_guard(tool_name="report_back", session_id="ses-b") is None
 
     def test_unrestricted_child_passes_other_tools(self, desktop_parent, tmp_home):
         self._register_child(desktop_parent, tmp_home)
@@ -591,6 +592,7 @@ class TestRegistration:
             def __init__(self):
                 self.tools = {}
                 self.hooks = {}
+                self.commands = {}
 
             def register_tool(self, **kwargs):
                 self.tools[kwargs["name"]] = kwargs
@@ -598,8 +600,14 @@ class TestRegistration:
             def register_hook(self, event, fn):
                 self.hooks.setdefault(event, []).append(fn)
 
+            def register_command(self, name, handler, description="", args_hint=""):
+                self.commands[name] = handler
+
         ctx = FakeCtx()
         plugin.register(ctx)
+        assert "report_back" in ctx.tools
+        assert ctx.tools["report_back"]["schema"]["parameters"]["required"] == ["result"]
+        assert set(ctx.commands) == {"report", "abandon", "detach", "spawn-cleanup"}
         assert "spawn_session" in ctx.tools
         assert ctx.tools["spawn_session"]["toolset"] == "spawn-session"
         assert ctx.tools["spawn_session"]["schema"]["parameters"]["required"] == [

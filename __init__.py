@@ -1,8 +1,11 @@
 """spawn-session — Hermes plugin: agent-spawned visible child sessions.
 
-Agent half (this package): registers the ``spawn_session`` tool
-(SPEC.md section 4.1) plus a ``pre_tool_call`` guard enforcing the
-child-session toolset restrictions (D10/D12). The desktop half (⌘K palette,
+Agent half (this package): registers the ``spawn_session`` and
+``report_back`` tools (SPEC.md sections 4.1/4.2), the ``/report``,
+``/abandon``, ``/detach`` and ``/spawn-cleanup`` slash commands (4.3), plus a
+``pre_tool_call`` guard enforcing the child-session toolset restrictions
+(D10/D12). Report delivery into the parent uses ``ctx.inject_message`` and
+needs ``plugins.entries.spawn-session.allow_gateway_injection: true``. The desktop half (⌘K palette,
 status cards, header block — SPEC section 7) is a later card and lives in
 ``desktop/`` when it lands.
 
@@ -14,11 +17,32 @@ act outside Desktop sessions (D13).
 
 from __future__ import annotations
 
-from .spawn_session.tools import SPAWN_SESSION_SCHEMA, spawn_session_handler, toolset_guard
+from .spawn_session import delivery
+from .spawn_session.commands import COMMANDS
+from .spawn_session.tools import (
+    REPORT_BACK_SCHEMA,
+    SPAWN_SESSION_SCHEMA,
+    report_back_handler,
+    spawn_session_handler,
+    toolset_guard,
+)
 
 
 def register(ctx) -> None:
     """Plugin entry point (see developer-guide/plugins docs)."""
+    # inject_message (report delivery into the parent, SPEC Q4) needs the context.
+    delivery.set_plugin_context(ctx)
+    ctx.register_tool(
+        name="report_back",
+        toolset="spawn-session",
+        schema=REPORT_BACK_SCHEMA,
+        handler=report_back_handler,
+        description=REPORT_BACK_SCHEMA["description"],
+        emoji="📨",
+    )
+    if hasattr(ctx, "register_command"):
+        for name, (handler, description, args_hint) in COMMANDS.items():
+            ctx.register_command(name, handler, description=description, args_hint=args_hint)
     ctx.register_tool(
         name="spawn_session",
         toolset="spawn-session",
