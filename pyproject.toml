@@ -13,6 +13,17 @@ dependencies = [
     "PyYAML>=6,<7",
 ]
 
+# deptry: static undeclared-dependency check, stage 3 of scripts/fast_gate.sh.
+# Host-provided modules are ignored for DEP001 (missing). hermes_bootstrap is
+# only used by the live checks in scripts/. The module map is needed because
+# deptry runs in a throwaway venv where PyYAML is not installed.
+[tool.deptry]
+known_first_party = ["spawn_session", "dashboard"]
+package_module_name_map = { "PyYAML" = "yaml" }
+
+[tool.deptry.per_rule_ignores]
+DEP001 = ["hermes_cli", "hermes_constants", "tools", "gateway", "tui_gateway", "fastapi", "hermes_bootstrap"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

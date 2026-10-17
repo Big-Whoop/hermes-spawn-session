@@ -297,6 +297,48 @@ Handover files always go to `.hermes/handovers`.
   `t_787f6427`). Automated tests cover the Python half, the REST routes and a
   Node smoke test of the desktop half.
 
+## Development
+
+Run the fast gate before you hand off a change:
+
+```sh
+scripts/fast_gate.sh
+```
+
+It runs six stages in order and exits non-zero if any of them fails:
+
+1. `pytest`
+2. `node scripts/smoke_desktop_plugin.mjs`
+3. `deptry`, a static check for undeclared imports. It is configured in
+   `pyproject.toml` under `[tool.deptry]`, and host-provided modules are
+   ignored there. deptry is installed into a throwaway venv under `$TMPDIR`.
+4. `hermes plugins doctor --ci`, run against a temporary `HERMES_HOME` with
+   the repo linked in as the plugin (the same HOME stage 6 uses).
+5. `hermes plugins validate --json`. The script evaluates each check. Two
+   known, deferred findings are allowlisted in the script: the security scan
+   of `.hermes/research/`, and the rule 9 private-import warning (see
+   [docs/catalog-contribution.md](docs/catalog-contribution.md)). Every other
+   check must pass.
+6. An isolated `hermes serve --port 0` under that temporary `HERMES_HOME`,
+   with the plugin linked and enabled. The stage asserts that the logs contain no
+   `Failed to load plugin spawn-session` line and that
+   `/api/plugins/spawn-session/proposals` answers 200. Then it kills the
+   server and deletes the temporary HOME.
+
+The gate checks the repo state only. It never touches the live install in
+`/opt/data` and never uses `--install-deps`. It also
+never runs `hermes serve --stop`, because that would stop every server. The
+full gate on the cluster (Option A in
+`.hermes/research/2026-10-17-plugin-e2e-staging/REPORT.md`) is not part of
+this script.
+
+To check the live install after a restart, run the read-only
+`scripts/live_health.sh`. It is not part of the gate. It exits non-zero if
+`spawn-session` is not enabled in `hermes plugins list`, or if the live
+`errors.log` contains `Failed to load plugin 'spawn-session'` since the last
+gateway start. A dependency that is declared but missing from the live
+install environment shows up here, not in the gate.
+
 ## E2E
 
 Playwright specs live in `e2e/`. There are two projects, and they run serially
