@@ -7,3 +7,10 @@ description: >
   when done. See SPEC.md and .hermes/decisions.md (D1-D13) in this repository.
 author: Big-Whoop
 homepage: https://github.com/Big-Whoop/hermes-spawn-session
+license: MIT
+requires_hermes: ">=0.22.2"
+provides_tools:
+  - spawn_session
+  - report_back
+provides_hooks:
+  - pre_tool_call
