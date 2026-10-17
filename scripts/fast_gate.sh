@@ -5,9 +5,11 @@
 #   1. pytest
 #   2. node scripts/smoke_desktop_plugin.mjs
 #   3. deptry (static undeclared-dependency check, throwaway venv under $TMPDIR)
-#   4. hermes plugins doctor --ci
+#   4. hermes plugins doctor --ci          (temporary HERMES_HOME)
 #   5. hermes plugins validate --json (per-check evaluation with an allowlist)
-#   6. isolated `hermes serve --port 0` under a temporary HERMES_HOME
+#   6. isolated `hermes serve --port 0`   (same temporary HERMES_HOME)
+#
+# Checks the repo state only. Live-install health: scripts/live_health.sh.
 #
 # Safety: never touches /opt/data (the live HERMES_HOME), never uses
 # --install-deps, never installs anything into the Hermes venv, never runs
@@ -133,14 +135,24 @@ else
     record deptry FAIL "$(echo "$out" | grep -c ' DEP0') issue(s)"
 fi
 
+# --- isolated HERMES_HOME (stages 4 and 6) -----------------------------------
+# The gate checks the REPO state only. Doctor and serve both run against a
+# fresh temporary HERMES_HOME with the repo linked in as the plugin, so the
+# live install (/opt/data) is never read or written. Live-install health is
+# a separate, read-only script: scripts/live_health.sh.
+GATE_HOME="$(mktemp -d "$SCRATCH/fast-gate-home.XXXXXX")"
+case "$GATE_HOME" in "$SCRATCH"/fast-gate-home.*) ;; *) echo "refusing: unexpected temp HOME $GATE_HOME"; exit 2 ;; esac
+case "$(cd "$GATE_HOME" && pwd -P)" in /opt/data|/opt/data/) echo "refusing: temp HOME is the live HOME"; exit 2 ;; esac
+mkdir -p "$GATE_HOME/plugins"
+ln -s "$ROOT" "$GATE_HOME/plugins/$PLUGIN_NAME"
+# Enable via config instead of `hermes plugins enable`: enable runs the
+# dependency installer, which builds a multi-GB environment in the HOME.
+printf 'plugins:\n  enabled:\n    - %s\n  disabled: []\n' "$PLUGIN_NAME" >"$GATE_HOME/config.yaml"
+echo "temp HOME: $GATE_HOME"
+
 # --- 4. plugins doctor --ci --------------------------------------------------
-# Runs with the caller's HERMES_HOME, so the CLI imports through the same
-# install environment the live gateway uses (<HERMES_HOME>/installs/...).
-# Doctor then loads the plugin in its own temporary HOME. This is the stage
-# that catches "dependency declared but not installed live". Stage 6 cannot:
-# a fresh HOME has no install environment and falls back to the base venv.
-log "4/6 hermes plugins doctor --ci"
-out=$("$HERMES_BIN" plugins doctor --ci "$ROOT" 2>&1); rc=$?
+log "4/6 hermes plugins doctor --ci (temp HOME)"
+out=$(HERMES_HOME="$GATE_HOME" "$HERMES_BIN" plugins doctor --ci "$ROOT" 2>&1); rc=$?
 echo "$out" | grep -v 'install out of sync'
 if [ $rc -eq 0 ]; then
     record doctor PASS
@@ -184,15 +196,6 @@ esac
 
 # --- 6. isolated serve -------------------------------------------------------
 log "6/6 isolated hermes serve --port 0"
-GATE_HOME="$(mktemp -d "$SCRATCH/fast-gate-home.XXXXXX")"
-case "$GATE_HOME" in /opt/data|/opt/data/) echo "refusing: temp HOME is live"; exit 2 ;; esac
-mkdir -p "$GATE_HOME/plugins"
-ln -s "$ROOT" "$GATE_HOME/plugins/$PLUGIN_NAME"
-# Enable via config instead of `hermes plugins enable`: enable runs the
-# dependency installer, which builds a multi-GB environment in the HOME.
-printf 'plugins:\n  enabled:\n    - %s\n  disabled: []\n' "$PLUGIN_NAME" >"$GATE_HOME/config.yaml"
-echo "temp HOME: $GATE_HOME"
-
 HERMES_HOME="$GATE_HOME" "$HERMES_BIN" serve --port 0 --host 127.0.0.1 --skip-build \
     </dev/null >"$GATE_HOME/serve.out" 2>&1 &
 SERVE_PID=$!
