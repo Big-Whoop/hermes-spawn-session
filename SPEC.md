@@ -170,8 +170,8 @@ hermes-spawn-session/                 (installed as ~/.hermes/plugins/spawn-sess
 
 `hermes plugins validate` warns about two imports. Both were audited on
 2026-10-17 (card t_d28ed43c). Neither has a documented public replacement, so
-both stay behind their guarded fallbacks. The upstream hook request is drafted
-in `docs/upstream-hook-request.md` (not filed).
+both stay behind their guarded fallbacks. The upstream hook request was filed as
+NousResearch/hermes-agent#140199 (open; see `docs/upstream-hook-request.md`).
 
 | Call | Why it's needed | Public candidates checked | Why they don't fit | Fallback |
 | --- | --- | --- | --- | --- |
