@@ -41,6 +41,8 @@ If the code and SPEC disagree, report it. Don't silently pick one.
 - `pytest`.
 - `tests/test_dependencies.py`: declare every non-host third-party import in `pyproject.toml`. Host-provided modules are not declared: hermes_cli, hermes_constants, tools, gateway, tui_gateway, fastapi.
 - `node scripts/smoke_desktop_plugin.mjs`.
+- `scripts/fast_gate.sh`: the one-command gate (pytest, smoke, deptry, `hermes plugins doctor`/`validate`, isolated `serve --port 0`). It checks the repo state only, in a temp HERMES_HOME; it never touches /opt/data. Run it before every PR.
+- `scripts/live_health.sh`: checks the LIVE install after a restart (plugin loaded, no `Failed to load plugin` in errors.log). Not part of the gate.
 - Manual checks in a live Desktop go on the e2e card t_787f6427.
 
 ## Rules
