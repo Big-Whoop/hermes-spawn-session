@@ -339,6 +339,39 @@ To check the live install after a restart, run the read-only
 gateway start. A dependency that is declared but missing from the live
 install environment shows up here, not in the gate.
 
+## E2E
+
+Playwright specs live in `e2e/`. There are two projects, and they run serially
+(one worker):
+
+- `backend` (`e2e/specs/backend.api.spec.ts`): REST routes and spawn rules
+  against an isolated `hermes serve` plus a mock LLM provider (`e2e/support/mock-llm.ts`).
+  No Desktop needed.
+- `desktop` (`e2e/specs/desktop.ui.spec.ts`): Hermes Desktop driven through
+  Playwright `_electron` in remote mode. It covers the ⌘K dialog, the proposal
+  card, the status card and ↳ badge, the child header, reports, Abort/Detach and
+  the theme switch, and it saves screenshots for the catalog. These specs skip
+  unless `HERMES_DESKTOP_ROOT` points at a built `apps/desktop` checkout.
+
+Setup and checks:
+
+    cd e2e && npm ci && npm run typecheck && npm run list
+
+Local run (the sandbox HERMES_HOME, free port and session token are created
+and removed automatically; set `E2E_KEEP=1` to keep them):
+
+    HERMES_BIN=/opt/hermes/bin/hermes HERMES_PYTHON=/opt/hermes/.venv/bin/python3 npx playwright test --project=backend
+
+`HERMES_PYTHON` must be the Python of the Hermes install, because the helper
+seeds parent sessions in-process.
+
+External backend (the hermes-staging Job): set `HERMES_DESKTOP_REMOTE_URL`,
+`HERMES_DESKTOP_REMOTE_TOKEN` and `E2E_HERMES_HOME`. `E2E_MOCK_LLM_URL` is
+optional; without it the specs that script turns skip. For the desktop project,
+also set `HERMES_DESKTOP_ROOT` (and `ELECTRON_BIN` if needed), and wrap the
+command in `xvfb-run -a` when running headless. Artifacts (JUnit, HTML,
+screenshots) go to `E2E_ARTIFACTS_DIR` (default `e2e/test-results`).
+
 ## More
 
 - Specification: [SPEC.md](SPEC.md)
