@@ -101,11 +101,11 @@ rules in [S1]/[S2].
 | R2 | `plugin.yaml` plus an entrypoint at the pin | [S1] | MET | `plugin.yaml:1-9`, `__init__.py:32`, `desktop/plugin.js:550`; validator "loadable ✓" |
 | R3 | Manifest `name`, `version`, `description` | [S3 dev-guide] / validator | MET | `plugin.yaml:1-7`; validator "manifest fields ✓" |
 | R4 | Catalog name `[a-z0-9_-]{1,64}`, no name conflict | [S2] Entry schema, Names | MET | `spawn-session`; no `plugin-catalog/spawn-session.yaml` in the upstream listing (checked 2026-10-17 via GitHub contents API) |
-| R5 | `requires_hermes` is a SemVer floor, not newer than the current release (rule 14) | [S2] rule 14 | NOT MET (optional in schema, but strongly expected) | not in `plugin.yaml`; README.md:25-26 says "built and tested against v0.22.2". Every precedent entry sets one [S5][S9] |
+| R5 | `requires_hermes` is a SemVer floor, not newer than the current release (rule 14) | [S2] rule 14 | MET | `plugin.yaml:11` `requires_hermes: ">=0.22.2"` (decision Q4, card t_1edf7ee7); validator "requires_hermes ✓ spec '>=0.22.2' parses". Matches README.md:25-26 "built and tested against v0.22.2" |
 | R6 | `version` matches the pinned code, quoted in the entry (rule 14) | [S1][S2] | MET (keep in sync) | `plugin.yaml:2` = `pyproject.toml` version = `dashboard/manifest.json` version = 0.1.0 |
-| R7 | `license` (SPDX) in the manifest, compatible license | [S3] Manifest v2 reference | NOT MET (field optional) | `LICENSE` is MIT and README.md:305-307 says MIT; `plugin.yaml` has no `license:` field |
+| R7 | `license` (SPDX) in the manifest, compatible license | [S3] Manifest v2 reference | MET | `plugin.yaml:10` `license: MIT` (decision Q4, card t_1edf7ee7), matching `LICENSE` and README.md:305-307 |
 | R8 | `manifest_version` (optional; absent = v1, supported forever) | [S3] Manifest v2 reference | N/A | v1 manifest is fine; set `manifest_version: 2` only if we adopt v2 fields |
-| R9 | Declared capabilities match registrations (rule 6) | [S2] rule 6 | NOT MET | `__init__.py:36-60` registers tools `report_back`, `spawn_session` and the `pre_tool_call` hook. The entry must list them; the validator fails both checks |
+| R9 | Declared capabilities match registrations (rule 6) | [S2] rule 6 | MET | `plugin.yaml:12-16` declares `provides_tools: [spawn_session, report_back]` and `provides_hooks: [pre_tool_call]`, matching `__init__.py:36-60` (card t_1edf7ee7); validator "declared tools ✓", "declared hooks ✓" |
 | R10 | Install security scan: no `dangerous` (rule 7) | [S2] rule 7 | NOT MET | flagged: `.hermes/research/2026-10-16-model-routing/lane1-hermes-docs.md:101,316`, `.hermes/research/2026-10-16-spawn-with-report/lane2-hermes-native-session-spawning.md:266` (quoted docs and prompts, not code, but the scanner reads the whole tree) |
 | R11 | Desktop half stays inside the SDK (rule 8) | [S2] rule 8; [S10] | MET | validator "desktop surface ✓"; imports only `@hermes/plugin-sdk`, `react`, `react/jsx-runtime` (`desktop/plugin.js:33-55`) |
 | R12 | Desktop: theme variables only, no hardcoded colours | [S10] "Style with theme variables" | MET | a grep for `#hex` / `rgb(` in `desktop/plugin.js` finds no hits |
@@ -140,7 +140,9 @@ Not implemented on this card. Each item is one suggested follow-up card.
   `provides_hooks: [pre_tool_call]`. Validate locally with a draft entry. The
   validator's "declared tools" check reads the catalog entry or manifest; also
   mirror the block in `plugin.yaml` if the validator reads it from there
-  (verify).
+  (verify). **Done (card t_1edf7ee7):** the validator reads top-level
+  `provides_tools` / `provides_hooks` from `plugin.yaml` (plugin guide, Step 2);
+  both checks now pass. The catalog entry still mirrors them (G12).
 - **G2 (blocker): security-scan failures from `.hermes/research/`.** Options:
   (a) move the research archive out of the plugin tree (a separate repo or
   branch, or a `docs/` path the scanner skips, if any), (b) point the catalog
@@ -160,7 +162,8 @@ Not implemented on this card. Each item is one suggested follow-up card.
   a hook exists, disclose both seams in the README (G5) like plan-mode did.
 - **G4: add `requires_hermes: ">=0.22.2"`** (or the oldest release actually
   tested) to `plugin.yaml` and the entry. Add `license: MIT`, plus optionally
-  `manifest_version: 2` and `tags`.
+  `manifest_version: 2` and `tags`. **Done in `plugin.yaml` (card t_1edf7ee7):**
+  `requires_hermes` and `license` added; `manifest_version`/`tags` not added.
 - **G5: README "Disclosure" section** covering everything listed in R21, plus
   the private-seam disclosure from G3. Also reuse it as the entry
   `description` disclosure line.
