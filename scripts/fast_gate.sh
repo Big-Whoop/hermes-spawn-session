@@ -282,8 +282,17 @@ fi
 if [ $npm_ok -eq 0 ]; then
     record e2e FAIL "npm ci failed"
 else
-    out=$(cd e2e && TMPDIR="$E2E_TMP" E2E_ARTIFACTS_DIR="$E2E_TMP/artifacts" \
-        HERMES_BIN="$HERMES_BIN" HERMES_PYTHON="${HERMES_PYTHON:-/opt/hermes/.venv/bin/python3}" \
+    # Force local sandbox mode BEFORE Playwright starts: strip every inherited
+    # HERMES_* (external-backend selectors HERMES_DESKTOP_REMOTE_URL/_TOKEN,
+    # HERMES_DASHBOARD_* auth) and every E2E_* (E2E_HERMES_HOME, E2E_STATE_FILE,
+    # E2E_PROJECT_DIR, E2E_MOCK_LLM_*, E2E_KEEP, ...), then set only the
+    # stage-owned values. externalBackend() therefore always returns null and
+    # the state file is pinned under $E2E_TMP.
+    e2e_python="${HERMES_PYTHON:-/opt/hermes/.venv/bin/python3}"
+    mapfile -t E2E_STRIP < <(compgen -e | grep -E '^(_?HERMES_|E2E_)')
+    out=$(cd e2e && env "${E2E_STRIP[@]/#/-u}" TMPDIR="$E2E_TMP" \
+        E2E_ARTIFACTS_DIR="$E2E_TMP/artifacts" E2E_STATE_FILE="$E2E_TMP/state.json" \
+        HERMES_BIN="$HERMES_BIN" HERMES_PYTHON="$e2e_python" \
         npx playwright test --project=backend --reporter=line 2>&1); rc=$?
     echo "$out" | grep -E '\[e2e\] backend|passed|failed|skipped|flaky|Error' | tail -40
     # The e2e sandbox HERMES_HOME must live under this stage's TMPDIR.
