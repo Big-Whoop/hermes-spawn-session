@@ -94,8 +94,38 @@ export function configYaml(mockLlmUrl: string): string {
     '  entries:',
     `    ${PLUGIN}:`,
     '      allow_gateway_injection: true',
+    // D6 cost rule (AT2.3): the parent's mock model is cheap, the "pricey"
+    // mock model is more expensive, so a spawn with it becomes a proposal.
+    '      cost_rank:',
+    `        "custom:${MOCK_MODEL}": 1`,
+    `        "custom:${MOCK_MODEL}-pricey": 5`,
     ''
   ].join('\n')
+}
+
+/** git init + one commit + a bare `origin` remote (idempotent for an existing repo). */
+export function initProjectRepo(projectDir: string, remoteDir: string): void {
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', ['-C', cwd, ...args], {
+      encoding: 'utf8',
+      env: { ...process.env, GIT_AUTHOR_NAME: 'e2e', GIT_AUTHOR_EMAIL: 'e2e@localhost', GIT_COMMITTER_NAME: 'e2e', GIT_COMMITTER_EMAIL: 'e2e@localhost' }
+    })
+    if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed in ${cwd}: ${r.stderr}`)
+    return r.stdout.trim()
+  }
+  if (!fs.existsSync(path.join(projectDir, '.git'))) git(projectDir, 'init', '-q', '-b', 'main')
+  if (spawnSync('git', ['-C', projectDir, 'rev-parse', '--verify', '-q', 'HEAD']).status !== 0) {
+    // Handovers live under .hermes/ in the project; keep them out of worktrees.
+    fs.writeFileSync(path.join(projectDir, '.gitignore'), '.hermes/\n.worktrees/\n')
+    fs.writeFileSync(path.join(projectDir, 'README.md'), '# e2e project\n')
+    git(projectDir, 'add', '.gitignore', 'README.md')
+    git(projectDir, 'commit', '-q', '-m', 'e2e: initial commit')
+  }
+  if (!git(projectDir, 'remote').split('\n').includes('origin')) {
+    fs.mkdirSync(remoteDir, { recursive: true })
+    git(remoteDir, 'init', '-q', '--bare')
+    git(projectDir, 'remote', 'add', 'origin', remoteDir)
+  }
 }
 
 /** Environment for the backend: strip HERMES_* and credentials (as upstream remote-helpers.ts). */
@@ -137,8 +167,10 @@ export async function startLocalBackend(mockLlmUrl: string): Promise<StartedBack
   for (const d of [home, hermesHome, path.join(hermesHome, 'plugins'), projectDir]) fs.mkdirSync(d, { recursive: true })
   fs.symlinkSync(REPO_ROOT, path.join(hermesHome, 'plugins', PLUGIN))
   fs.writeFileSync(path.join(hermesHome, 'config.yaml'), configYaml(mockLlmUrl))
-  // A git repo as project: handovers are written under <cwd>/.hermes/handovers.
-  spawnSync('git', ['init', '-q', '-b', 'main', projectDir])
+  // A git repo with one commit and a bare `origin` as project: handovers are
+  // written under <cwd>/.hermes/handovers, and worktree specs (AT2.5/AT7.2)
+  // branch off it and push WIP commits to the remote.
+  initProjectRepo(projectDir, path.join(root, 'origin.git'))
 
   const port = await freePort()
   const token = randomBytes(24).toString('base64url')
@@ -172,7 +204,7 @@ export function externalBackend(): BackendState | null {
   const hermesHome = process.env.E2E_HERMES_HOME
   if (!hermesHome) throw new Error('external backend mode needs E2E_HERMES_HOME (the backend\'s HERMES_HOME) to seed sessions')
   const projectDir = process.env.E2E_PROJECT_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'spawn-session-e2e-project-'))
-  spawnSync('git', ['init', '-q', '-b', 'main', projectDir])
+  initProjectRepo(projectDir, `${projectDir}.origin.git`)
   return {
     url: url.replace(/\/$/, ''), token, hermesHome, projectDir,
     mockLlmUrl: process.env.E2E_MOCK_LLM_URL || null,

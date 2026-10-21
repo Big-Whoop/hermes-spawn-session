@@ -9,14 +9,22 @@ This helper calls the same plugin handlers directly instead, as
 backend's HERMES_HOME and prints exactly one JSON line.
 
 Commands:
-    seed-parent --title T --cwd DIR [--source desktop]
+    seed-parent --title T --cwd DIR [--source desktop] [--provider P --model M]
         Create a parent session row through the in-process TUI-gateway
-        ``session.create`` RPC (same call the Desktop makes).
+        ``session.create`` RPC (same call the Desktop makes). With a provider
+        the row records ``provider:model`` before A's first turn (D6 needs it).
     propose --session-id A --title T --task X [--context C] [--model provider:model]
         Call ``spawn_session`` with ``initiation=own_initiative`` as A's agent
         would. The result is a ``proposed`` handover (no session created yet).
+    spawn --session-id A --title T --task X [--initiation user_asked|own_initiative]
+          [--model provider:model] [--worktree] [--allowed-toolset NAME ...]
+        Call ``spawn_session`` with any initiation and options. Note: this runs
+        in the helper's own process, so B is created through the helper's
+        in-process gateway (same state.db, not live in the serve).
     report --session-id B --result R [--open-item ...]
         Call ``report_back`` as B's agent would.
+    session --session-id S
+        Read S's state.db row (title, archived, cwd) and its messages.
 
 Example:
     HERMES_HOME=/tmp/h /opt/hermes/.venv/bin/python e2e/support/hermes_helper.py seed-parent --title A --cwd /tmp/p
@@ -68,6 +76,8 @@ def cmd_seed_parent(a: argparse.Namespace) -> None:
         "cwd": a.cwd,
         "cwd_explicit": True,
         "messages": [{"role": "user", "content": f"e2e parent session: {a.title}"}],
+        **({"provider": a.provider} if a.provider else {}),
+        **({"model": a.model} if a.model else {}),
     }})
     if not isinstance(resp, dict) or "error" in resp:
         _emit({"ok": False, "error": resp.get("error") if isinstance(resp, dict) else "no response"}, 1)
@@ -86,6 +96,46 @@ def cmd_propose(a: argparse.Namespace) -> None:
         args["model"] = a.model
     res = json.loads(tools.spawn_session_handler(args, session_id=a.session_id))
     _emit(res, 0 if res.get("ok") else 1)
+
+
+def cmd_spawn(a: argparse.Namespace) -> None:
+    _bootstrap_gateway()
+    # allowed_toolsets is validated against the tool registry; load the
+    # built-in tools and the enabled plugins as the serve does.
+    from hermes_cli.plugins import get_plugin_manager
+    from tools.registry import discover_builtin_tools
+
+    discover_builtin_tools()
+    get_plugin_manager().discover_and_load()
+    tools = _tools()
+    args: dict = {"title": a.title, "task": a.task, "initiation": a.initiation}
+    if a.model:
+        args["model"] = a.model
+    if a.worktree:
+        args["worktree"] = True
+    if a.allowed_toolset:
+        args["allowed_toolsets"] = a.allowed_toolset
+    res = json.loads(tools.spawn_session_handler(args, session_id=a.session_id))
+    _emit(res, 0 if res.get("ok") else 1)
+
+
+def cmd_session(a: argparse.Namespace) -> None:
+    import sqlite3
+
+    db = Path(os.environ["HERMES_HOME"]) / "state.db"
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+    try:
+        row = conn.execute("SELECT id, title, archived, cwd FROM sessions WHERE id = ?",
+                           (a.session_id,)).fetchone()
+        if row is None:
+            _emit({"ok": False, "error": f"no session {a.session_id}"}, 1)
+        msgs = conn.execute("SELECT role, content FROM messages WHERE session_id = ? ORDER BY id",
+                            (a.session_id,)).fetchall()
+    finally:
+        conn.close()
+    assert row is not None  # _emit exits on a missing row
+    _emit({"ok": True, "id": row[0], "title": row[1], "archived": bool(row[2]), "cwd": row[3],
+           "messages": [{"role": r, "content": c if isinstance(c, str) else ""} for r, c in msgs]})
 
 
 def cmd_report(a: argparse.Namespace) -> None:
@@ -107,19 +157,32 @@ def main() -> None:
     p.add_argument("--title", required=True)
     p.add_argument("--cwd", required=True)
     p.add_argument("--source", default="desktop")
+    p.add_argument("--provider")
+    p.add_argument("--model")
     p = sub.add_parser("propose")
     p.add_argument("--session-id", required=True)
     p.add_argument("--title", required=True)
     p.add_argument("--task", required=True)
     p.add_argument("--context")
     p.add_argument("--model")
+    p = sub.add_parser("spawn")
+    p.add_argument("--session-id", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--task", required=True)
+    p.add_argument("--initiation", default="user_asked", choices=["user_asked", "own_initiative"])
+    p.add_argument("--model")
+    p.add_argument("--worktree", action="store_true")
+    p.add_argument("--allowed-toolset", action="append")
+    p = sub.add_parser("session")
+    p.add_argument("--session-id", required=True)
     p = sub.add_parser("report")
     p.add_argument("--session-id", required=True)
     p.add_argument("--result", required=True)
     p.add_argument("--open-item", action="append")
     a = ap.parse_args()
     try:
-        {"seed-parent": cmd_seed_parent, "propose": cmd_propose, "report": cmd_report}[a.cmd](a)
+        {"seed-parent": cmd_seed_parent, "propose": cmd_propose, "spawn": cmd_spawn,
+         "session": cmd_session, "report": cmd_report}[a.cmd](a)
     except Exception as exc:  # always one JSON line
         _emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"}, 1)
 

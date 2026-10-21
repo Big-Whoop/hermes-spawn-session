@@ -133,9 +133,26 @@ def submit_prompt(session_id: str, text: str, *, display_kind: str | None = None
     return rpc("prompt.submit", params)
 
 
+def _live_runtime_id(session_id: str) -> str:
+    """Runtime id of the live session whose durable key is ``session_id``.
+
+    ``session.title`` only accepts a live runtime id, while the plugin keeps
+    the durable (stored) id. ``session.active_list`` maps one to the other.
+    Returns ``session_id`` unchanged when no live session matches.
+    """
+    try:
+        rows = rpc("session.active_list").get("sessions") or []
+    except GatewayError:
+        return session_id
+    for row in rows:
+        if isinstance(row, dict) and session_id in (row.get("session_key"), row.get("id")):
+            return str(row.get("id") or session_id)
+    return session_id
+
+
 def set_session_title(session_id: str, title: str) -> dict:
-    """Set a session's stored title (``session.title``)."""
-    return rpc("session.title", {"session_id": session_id, "title": title})
+    """Set a session's stored title (``session.title``); accepts a stored or runtime id."""
+    return rpc("session.title", {"session_id": _live_runtime_id(session_id), "title": title})
 
 
 def archive_session(session_id: str) -> dict:
