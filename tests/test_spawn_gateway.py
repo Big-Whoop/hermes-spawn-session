@@ -115,3 +115,42 @@ def test_unavailable_raises(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "tui_gateway.server", None)
     with pytest.raises(gateway.GatewayUnavailable):
         gateway.rpc("ping", {})
+
+
+def test_set_session_title_maps_stored_id_to_live_runtime_id():
+    """``session.title`` needs the live runtime id; the plugin keeps the stored id (AT7.3)."""
+    frames = []
+
+    def handle(frame):
+        frames.append(frame)
+        if frame["method"] == "session.active_list":
+            return {"id": frame["id"], "result": {"sessions": [
+                {"id": "rt-other", "session_key": "ses-other"},
+                {"id": "rt-b", "session_key": "ses-b"},
+            ]}}
+        return {"id": frame["id"], "result": {"title": frame["params"]["title"]}}
+
+    gateway.set_handle_request_override(handle)
+    try:
+        gateway.set_session_title("ses-b", "\u21b3 Detached: x")
+        assert frames[-1]["method"] == "session.title"
+        assert frames[-1]["params"] == {"session_id": "rt-b", "title": "\u21b3 Detached: x"}
+    finally:
+        gateway.set_handle_request_override(None)
+
+
+def test_set_session_title_falls_back_to_given_id():
+    frames = []
+
+    def handle(frame):
+        frames.append(frame)
+        if frame["method"] == "session.active_list":
+            return {"id": frame["id"], "error": {"code": 5000, "message": "no sessions"}}
+        return {"id": frame["id"], "result": {}}
+
+    gateway.set_handle_request_override(handle)
+    try:
+        gateway.set_session_title("rt-live", "t")
+        assert frames[-1]["params"]["session_id"] == "rt-live"
+    finally:
+        gateway.set_handle_request_override(None)
