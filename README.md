@@ -305,7 +305,7 @@ Run the fast gate before you hand off a change:
 scripts/fast_gate.sh
 ```
 
-It runs six stages in order and exits non-zero if any of them fails:
+It runs seven stages in order and exits non-zero if any of them fails:
 
 1. `pytest`
 2. `node scripts/smoke_desktop_plugin.mjs`
@@ -324,6 +324,12 @@ It runs six stages in order and exits non-zero if any of them fails:
    `Failed to load plugin spawn-session` line and that
    `/api/plugins/spawn-session/proposals` answers 200. Then it kills the
    server and deletes the temporary HOME.
+7. The Playwright `backend` project (`npx playwright test --project=backend`
+   in `e2e/`, see [E2E](#e2e)). `npm ci` runs only when `e2e/node_modules` is
+   missing or `package-lock.json` changed. The e2e sandbox HOME and the
+   artifacts live under the gate's temporary HOME, and the stage fails if any
+   process is left over. The `desktop` project is excluded: Electron does not
+   render in the sandbox, so it runs only in the hermes-e2e k8s Job.
 
 The gate checks the repo state only. It never touches the live install in
 `/opt/data` and never uses `--install-deps`. It also
@@ -364,6 +370,9 @@ and removed automatically; set `E2E_KEEP=1` to keep them):
 
 `HERMES_PYTHON` must be the Python of the Hermes install, because the helper
 seeds parent sessions in-process.
+
+The fast gate runs the backend project as its stage 7; the desktop project is
+not part of the gate.
 
 External backend (the hermes-staging Job): set `HERMES_DESKTOP_REMOTE_URL`,
 `HERMES_DESKTOP_REMOTE_TOKEN` and `E2E_HERMES_HOME`. `E2E_MOCK_LLM_URL` is
