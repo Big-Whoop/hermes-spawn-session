@@ -101,8 +101,8 @@ indent API is documented.
 
 Answer: **No. `↳` fallback confirmed.** B's title = `↳ <title>` (via
 `session.title`), a `SESSION_ROW_AREAS.leading` badge with the parent's
-colour, and `host.sessions.reorder()` placing B directly after A in Recents
-where a manual order exists. Detached children: `↳ Detached: <title>`.
+colour. Recents is not reordered (see §7: `host.sessions.reorder()` would
+clobber the user's manual order). Detached children: `↳ Detached: <title>`.
 
 ### Q4 — Deliver a message into A that triggers a real turn (queued if busy, persisted if closed)
 
@@ -355,6 +355,8 @@ proposed ──confirm──▶ running ──report──▶ reported ──inj
 
 ## 9. Cards and acceptance tests
 
+Test coverage per AT: [docs/at-matrix.md](docs/at-matrix.md).
+
 Card 2 — Backend core: `spawn_session` + session.create + handover file
 - AT2.1 `user_asked` call in a Desktop session creates a handover file with
   valid frontmatter and a child session whose first message is the file body.
@@ -387,7 +389,8 @@ Card 5 — Desktop half: ⌘K, tabs, cards, header
 - AT5.6 No hardcoded colours; plugin loads without error toast.
 
 Card 6 — Sidebar presentation and open-report banner
-- AT6.1 Child title has `↳ ` prefix and leading badge; ordered after A.
+- AT6.1 Child title has `↳ ` prefix and leading badge; Recents order is left
+  unchanged (no reorder, see §7).
 - AT6.2 Reopening A with `reported` children shows the banner; Deliver works.
 
 Card 7 — Abort / detach / cleanup

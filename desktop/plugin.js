@@ -26,6 +26,14 @@
  * /api/plugins/spawn-session). Live updates via host.onEvent with a polling
  * fallback (refetchInterval), as the SDK docs require.
  *
+ * Testability (e2e/specs/desktop.ui.spec.ts): every element an acceptance test
+ * clicks or asserts carries a stable `data-spawn-session-*` attribute:
+ * containers `-dialog`, `-card`, `-status`, `-header`, `-open-reports`, `-row`;
+ * inputs `-field` (title/task/context/model/effort); buttons `-action`
+ * (start/cancel/dismiss/edit/open/abort/detach/detach-confirm/deliver/
+ * open-parent/toggle-*); texts `-status-text`, `-reasons`, `-title`, `-model`,
+ * `-detached`, `-blocked`. Keep them stable; the specs depend on them.
+ *
  * Plain ESM, loaded uncompiled: jsx() calls only; imports limited to
  * @hermes/plugin-sdk, react and react/jsx-runtime. No hardcoded colours.
  */
@@ -163,17 +171,18 @@ function SpawnForm({ state, onClose }) {
     children: [
       blocked &&
         jsx('div', {
+          'data-spawn-session-blocked': defaults.data.is_child ? 'child' : 'surface',
           className: 'rounded-[4px] border border-(--ui-stroke-secondary) p-2 text-xs text-(--ui-text-secondary)',
           children: defaults.data.is_child
             ? 'This is a spawned session — it cannot spawn further sessions (one level only).'
             : 'Spawning is only available in Hermes Desktop sessions.'
         }),
       fieldLabel('Title'),
-      jsx(Input, { value: title, maxLength: 80, placeholder: 'Short title for the new session', onChange: e => setTitle(e.target.value), autoFocus: true }),
+      jsx(Input, { 'data-spawn-session-field': 'title', value: title, maxLength: 80, placeholder: 'Short title for the new session', onChange: e => setTitle(e.target.value), autoFocus: true }),
       fieldLabel('Task'),
-      jsx(Textarea, { value: task, rows: 5, placeholder: 'Detailed instructions for the new session', onChange: e => setTask(e.target.value) }),
+      jsx(Textarea, { 'data-spawn-session-field': 'task', value: task, rows: 5, placeholder: 'Detailed instructions for the new session', onChange: e => setTask(e.target.value) }),
       fieldLabel('Context'),
-      jsx(Textarea, { value: context, rows: 3, placeholder: 'Short background (optional)', onChange: e => setContext(e.target.value) }),
+      jsx(Textarea, { 'data-spawn-session-field': 'context', value: context, rows: 3, placeholder: 'Short background (optional)', onChange: e => setContext(e.target.value) }),
       jsxs('div', {
         className: 'grid grid-cols-[1fr_8rem] gap-2',
         children: [
@@ -182,6 +191,7 @@ function SpawnForm({ state, onClose }) {
             children: [
               fieldLabel('Model'),
               jsxs('select', {
+                'data-spawn-session-field': 'model',
                 className: selectClass,
                 value: model,
                 onChange: e => setModel(e.target.value),
@@ -197,6 +207,7 @@ function SpawnForm({ state, onClose }) {
             children: [
               fieldLabel('Effort'),
               jsxs('select', {
+                'data-spawn-session-field': 'effort',
                 className: selectClass,
                 value: effort,
                 onChange: e => setEffort(e.target.value),
@@ -209,11 +220,11 @@ function SpawnForm({ state, onClose }) {
           })
         ]
       }),
-      error && jsx('div', { className: 'text-xs text-destructive', role: 'alert', children: error }),
+      error && jsx('div', { 'data-spawn-session-error': '', className: 'text-xs text-destructive', role: 'alert', children: error }),
       jsxs(DialogFooter, {
         children: [
-          jsx(Button, { variant: 'ghost', onClick: onClose, disabled: busy, children: 'Cancel' }),
-          jsx(Button, { onClick: submit, disabled: !canSubmit, children: busy ? 'Starting…' : 'Start' })
+          jsx(Button, { 'data-spawn-session-action': 'cancel', variant: 'ghost', onClick: onClose, disabled: busy, children: 'Cancel' }),
+          jsx(Button, { 'data-spawn-session-action': 'start', onClick: submit, disabled: !canSubmit, children: busy ? 'Starting…' : 'Start' })
         ]
       })
     ]
@@ -231,6 +242,7 @@ function SpawnDialogHost() {
     children:
       state &&
       jsxs(DialogContent, {
+        'data-spawn-session-dialog': state.proposal ? 'edit' : 'new',
         className: 'max-w-lg',
         children: [
           jsxs(DialogHeader, {
@@ -278,13 +290,15 @@ function ProposalCard({ proposal }) {
       jsxs('div', {
         className: 'flex items-center gap-2',
         children: [
-          jsx(Badge, { variant: 'secondary', children: 'Proposed session' }),
-          jsx('span', { className: 'min-w-0 flex-1 truncate font-medium text-foreground', title: proposal.title, children: proposal.title }),
-          jsx('span', { className: 'shrink-0 text-(--ui-text-tertiary)', children: proposal.model || '' })
+          jsx(Badge, { 'data-spawn-session-badge': 'proposed', variant: 'secondary', children: 'Proposed session' }),
+          jsx('span', { 'data-spawn-session-title': '', className: 'min-w-0 flex-1 truncate font-medium text-foreground', title: proposal.title, children: proposal.title }),
+          jsx('span', { 'data-spawn-session-model': proposal.model || '', className: 'shrink-0 text-(--ui-text-tertiary)', children: proposal.model || '' })
         ]
       }),
       jsx('button', {
         type: 'button',
+        'data-spawn-session-action': 'toggle-details',
+        'aria-expanded': open,
         className: 'text-left text-(--ui-text-secondary) hover:text-foreground',
         onClick: () => setOpen(v => !v),
         children: open ? 'Hide task and context' : 'Show task and context'
@@ -294,25 +308,31 @@ function ProposalCard({ proposal }) {
           className: 'flex max-h-48 flex-col gap-1 overflow-auto whitespace-pre-wrap text-(--ui-text-secondary)',
           children: [
             jsx('div', { className: 'font-medium text-foreground', children: 'Task' }),
-            jsx('div', { children: proposal.task }),
+            jsx('div', { 'data-spawn-session-task': '', children: proposal.task }),
             proposal.context && jsx('div', { className: 'font-medium text-foreground', children: 'Context' }),
-            proposal.context && jsx('div', { children: proposal.context })
+            proposal.context && jsx('div', { 'data-spawn-session-context': '', children: proposal.context })
           ]
         }),
       proposal.reasons && proposal.reasons.length > 0 &&
-        jsx('div', { className: 'text-(--ui-text-tertiary)', children: proposal.reasons.join(' · ') }),
+        jsx('div', {
+          // AT2.3 (cost note) / AT3.2 (limit reached): why confirmation is needed.
+          'data-spawn-session-reasons': proposal.reasons.length,
+          className: 'text-(--ui-text-tertiary)',
+          children: proposal.reasons.join(' · ')
+        }),
       jsxs('div', {
         className: 'flex justify-end gap-1.5',
         children: [
-          jsx(Button, { size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => act('dismiss'), children: busy === 'dismiss' ? 'Dismissing…' : 'Dismiss' }),
+          jsx(Button, { 'data-spawn-session-action': 'dismiss', size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => act('dismiss'), children: busy === 'dismiss' ? 'Dismissing…' : 'Dismiss' }),
           jsx(Button, {
+            'data-spawn-session-action': 'edit',
             size: 'xs',
             variant: 'outline',
             disabled: Boolean(busy),
             onClick: () => $dialog.set({ key: `edit-${proposal.handover_id}-${Date.now()}`, sessionId: proposal.parent_session_id, proposal }),
             children: 'Edit'
           }),
-          jsx(Button, { size: 'xs', disabled: Boolean(busy), onClick: () => act('start'), children: busy === 'start' ? 'Starting…' : 'Start' })
+          jsx(Button, { 'data-spawn-session-action': 'start', size: 'xs', disabled: Boolean(busy), onClick: () => act('start'), children: busy === 'start' ? 'Starting…' : 'Start' })
         ]
       })
     ]
@@ -338,14 +358,16 @@ function ProposalStrip() {
 
 // ------------------------------------------------------------------ B header (D9)
 
-function Collapsible({ label, text }) {
+function Collapsible({ id, label, text }) {
   const [open, setOpen] = useState(false)
   if (!text) return null
   return jsxs('div', {
+    'data-spawn-session-collapsible': id,
     className: 'flex flex-col gap-1',
     children: [
       jsx('button', {
         type: 'button',
+        'data-spawn-session-action': `toggle-${id}`,
         'aria-expanded': open,
         className: 'text-left font-medium text-(--ui-text-secondary) hover:text-foreground',
         onClick: () => setOpen(v => !v),
@@ -353,6 +375,7 @@ function Collapsible({ label, text }) {
       }),
       open &&
         jsx('div', {
+          'data-spawn-session-collapsible-body': id,
           className: 'max-h-48 overflow-auto whitespace-pre-wrap pl-3 text-(--ui-text-secondary)',
           children: text
         })
@@ -378,20 +401,22 @@ function ChildHeader() {
       jsxs('div', {
         className: 'flex items-center gap-1.5',
         children: [
-          info.detached && jsx(Badge, { variant: 'secondary', children: 'Detached' }),
+          info.detached && jsx(Badge, { 'data-spawn-session-detached': '', variant: 'secondary', children: 'Detached' }),
           jsx('span', { className: 'text-(--ui-text-secondary)', children: 'Started by Hermes from' }),
           jsx('button', {
             type: 'button',
+            'data-spawn-session-action': 'open-parent',
+            'data-spawn-session-parent': info.parent_session_id || '',
             className: 'min-w-0 truncate font-medium text-foreground underline-offset-2 hover:underline',
             title: parentLabel,
             onClick: () => openSession(info.parent_session_id, 'in-place'),
             children: parentLabel
           }),
-          jsx('span', { className: 'ml-auto shrink-0 text-(--ui-text-tertiary)', children: info.status })
+          jsx('span', { 'data-spawn-session-status-text': info.status, className: 'ml-auto shrink-0 text-(--ui-text-tertiary)', children: info.status })
         ]
       }),
-      jsx(Collapsible, { label: 'Task', text: info.task }),
-      jsx(Collapsible, { label: 'Context', text: info.context })
+      jsx(Collapsible, { id: 'task', label: 'Task', text: info.task }),
+      jsx(Collapsible, { id: 'context', label: 'Context', text: info.context })
     ]
   })
 }
@@ -432,14 +457,15 @@ function StatusCard({ child }) {
       jsxs('div', {
         className: 'flex items-center gap-2',
         children: [
-          jsx(Badge, { variant: 'secondary', children: child.status }),
-          jsx('span', { className: 'min-w-0 flex-1 truncate font-medium text-foreground', title: child.title, children: child.title }),
+          jsx(Badge, { 'data-spawn-session-status-text': child.status, variant: 'secondary', children: child.status }),
+          jsx('span', { 'data-spawn-session-title': '', className: 'min-w-0 flex-1 truncate font-medium text-foreground', title: child.title, children: child.title }),
           child.reports > 0 &&
-            jsx('span', { className: 'shrink-0 text-(--ui-text-tertiary)', children: `${child.reports} report${child.reports === 1 ? '' : 's'}` })
+            jsx('span', { 'data-spawn-session-reports': child.reports, className: 'shrink-0 text-(--ui-text-tertiary)', children: `${child.reports} report${child.reports === 1 ? '' : 's'}` })
         ]
       }),
       confirmDetach &&
         jsx('div', {
+          'data-spawn-session-detach-warning': '',
           className: 'text-(--ui-text-secondary)',
           children: 'Detach is irreversible: the session continues on its own and no report is sent back.'
         }),
@@ -447,15 +473,15 @@ function StatusCard({ child }) {
         className: 'flex justify-end gap-1.5',
         children: [
           child.child_session_id &&
-            jsx(Button, { size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => openSession(child.child_session_id, 'tab'), children: 'Open' }),
+            jsx(Button, { 'data-spawn-session-action': 'open', size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => openSession(child.child_session_id, 'tab'), children: 'Open' }),
           canAbort &&
-            jsx(Button, { size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => act('abort'), children: busy === 'abort' ? 'Aborting…' : 'Abort' }),
+            jsx(Button, { 'data-spawn-session-action': 'abort', size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => act('abort'), children: busy === 'abort' ? 'Aborting…' : 'Abort' }),
           canDetach && !confirmDetach &&
-            jsx(Button, { size: 'xs', variant: 'outline', disabled: Boolean(busy), onClick: () => setConfirmDetach(true), children: 'Detach' }),
+            jsx(Button, { 'data-spawn-session-action': 'detach', size: 'xs', variant: 'outline', disabled: Boolean(busy), onClick: () => setConfirmDetach(true), children: 'Detach' }),
           confirmDetach &&
-            jsx(Button, { size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => setConfirmDetach(false), children: 'Cancel' }),
+            jsx(Button, { 'data-spawn-session-action': 'detach-cancel', size: 'xs', variant: 'ghost', disabled: Boolean(busy), onClick: () => setConfirmDetach(false), children: 'Cancel' }),
           confirmDetach &&
-            jsx(Button, { size: 'xs', disabled: Boolean(busy), onClick: () => act('detach'), children: busy === 'detach' ? 'Detaching…' : 'Detach now' })
+            jsx(Button, { 'data-spawn-session-action': 'detach-confirm', size: 'xs', disabled: Boolean(busy), onClick: () => act('detach'), children: busy === 'detach' ? 'Detaching…' : 'Detach now' })
         ]
       })
     ]
@@ -484,8 +510,8 @@ function OpenReportsNotice({ sessionId, count }) {
     'data-spawn-session-open-reports': count,
     className: 'mx-2 mb-1.5 flex items-center gap-2 rounded-[4px] border border-(--ui-accent) p-2 text-xs',
     children: [
-      jsx('span', { className: 'flex-1 font-medium text-foreground', children: `${count} open report${count === 1 ? '' : 's'}` }),
-      jsx(Button, { size: 'xs', disabled: busy, onClick: deliver, children: busy ? 'Delivering…' : 'Deliver' })
+      jsx('span', { 'data-spawn-session-open-reports-text': '', className: 'flex-1 font-medium text-foreground', children: `${count} open report${count === 1 ? '' : 's'}` }),
+      jsx(Button, { 'data-spawn-session-action': 'deliver', size: 'xs', disabled: busy, onClick: deliver, children: busy ? 'Delivering…' : 'Deliver' })
     ]
   })
 }
@@ -520,6 +546,7 @@ function RowBadge({ sessionId }) {
   if (!entry) return null
   return jsx('span', {
     'data-spawn-session-row': entry.handover_id,
+    'data-spawn-session-row-status': entry.status,
     className: 'shrink-0 text-[0.6875rem] text-(--ui-text-tertiary)',
     title: `Spawned session (${entry.status})`,
     children: entry.status === 'detached' ? '⤳' : '↳'

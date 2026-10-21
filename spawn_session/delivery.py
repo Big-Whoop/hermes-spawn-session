@@ -39,8 +39,30 @@ def set_plugin_context(ctx: Any) -> None:
     _plugin_ctx = ctx
 
 
+def _registered_context() -> Any:
+    """The PluginContext, also when this module is a second copy.
+
+    Hermes imports the plugin as ``hermes_plugins.<slug>`` and calls
+    ``register(ctx)`` there, but ``dashboard/plugin_api.py`` is imported by
+    path and reaches this package as top-level ``spawn_session``. Both copies
+    live in the same process, so the REST routes look the context up on the
+    copy that ``register`` filled in.
+    """
+    if _plugin_ctx is not None:
+        return _plugin_ctx
+    import sys
+
+    for name, mod in list(sys.modules.items()):
+        if mod is None or mod is sys.modules.get(__name__) or not name.endswith(".spawn_session.delivery"):
+            continue
+        ctx = getattr(mod, "_plugin_ctx", None)
+        if ctx is not None:
+            return ctx
+    return None
+
+
 def _default_inject(text: str, session_key: str) -> bool:
-    ctx = _plugin_ctx
+    ctx = _registered_context()
     if ctx is None or not hasattr(ctx, "inject_message"):
         logger.warning("inject_message unavailable (plugin context not registered)")
         return False

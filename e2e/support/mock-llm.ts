@@ -6,13 +6,26 @@
 //
 // Replies are scripted: a reply queue (POST /__mock/script, JSON array of
 // replies) is consumed first; otherwise the reply echoes a fixed sentence.
-// A reply is either a string (assistant text) or
-// { tool: "<name>", arguments: {...} } (a single tool call).
+// A reply is either a string (assistant text) or an object:
+//   { text: "..." }                          assistant text
+//   { tool: "<name>", arguments: {...} }     a single tool call
+// Objects may also carry
+//   match:   only used for a request whose last user message contains this
+//            substring (several sessions share one mock; without `match` a
+//            reply goes to whichever turn asks first)
+//   delayMs: wait this long before answering (a slow turn, AT4.3)
 // Every request is recorded and readable via GET /__mock/requests.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 
-export type MockReply = string | { tool: string; arguments: Record<string, unknown> }
+export interface MockReplyOptions {
+  match?: string
+  delayMs?: number
+}
+export type MockReply =
+  | string
+  | (MockReplyOptions & { text: string })
+  | (MockReplyOptions & { tool: string; arguments: Record<string, unknown> })
 
 export interface MockLlm {
   url: string
@@ -37,8 +50,31 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body))
 }
 
+function contentText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) return content.map(p => (p && typeof p === 'object' && 'text' in p ? String((p as { text: unknown }).text) : '')).join('')
+  return ''
+}
+
+/** Text of the last user message of a chat request. */
+export function lastUserText(body: { messages?: Array<{ role?: string; content?: unknown }> }): string {
+  const msgs = body.messages ?? []
+  for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i].role === 'user') return contentText(msgs[i].content)
+  return ''
+}
+
+function takeReply(queue: MockReply[], userText: string): MockReply {
+  const i = queue.findIndex(r => typeof r === 'string' || !r.match || userText.includes(r.match))
+  if (i < 0) return DEFAULT_REPLY
+  return queue.splice(i, 1)[0]
+}
+
+function isTool(reply: MockReply): reply is MockReplyOptions & { tool: string; arguments: Record<string, unknown> } {
+  return typeof reply !== 'string' && 'tool' in reply
+}
+
 function message(reply: MockReply, n: number): Record<string, unknown> {
-  if (typeof reply === 'string') return { role: 'assistant', content: reply }
+  if (!isTool(reply)) return { role: 'assistant', content: typeof reply === 'string' ? reply : reply.text }
   return {
     role: 'assistant',
     content: null,
@@ -70,12 +106,13 @@ export async function startMockLlm(port = 0): Promise<MockLlm> {
         return json(res, 200, requests)
       }
       if (req.method === 'POST' && url.pathname.endsWith('/chat/completions')) {
-        const body = JSON.parse((await readBody(req)) || '{}') as { stream?: boolean }
+        const body = JSON.parse((await readBody(req)) || '{}') as { stream?: boolean; messages?: Array<{ role?: string; content?: unknown }> }
         requests.push(body)
         n += 1
-        const reply = queue.shift() ?? DEFAULT_REPLY
+        const reply = takeReply(queue, lastUserText(body))
+        if (typeof reply !== 'string' && reply.delayMs) await new Promise(r => setTimeout(r, reply.delayMs))
         const msg = message(reply, n)
-        const finish = typeof reply === 'string' ? 'stop' : 'tool_calls'
+        const finish = isTool(reply) ? 'tool_calls' : 'stop'
         const base = { id: `chatcmpl-mock-${n}`, created: Math.floor(Date.now() / 1000), model: MOCK_MODEL }
         const usage = { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
         if (!body.stream) {
@@ -84,8 +121,8 @@ export async function startMockLlm(port = 0): Promise<MockLlm> {
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' })
         const chunk = (delta: unknown, finish_reason: string | null, extra: object = {}) =>
           res.write(`data: ${JSON.stringify({ ...base, object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason }], ...extra })}\n\n`)
-        if (typeof reply === 'string') {
-          chunk({ role: 'assistant', content: reply }, null)
+        if (!isTool(reply)) {
+          chunk({ role: 'assistant', content: msg.content }, null)
         } else {
           const calls = (msg.tool_calls as Array<Record<string, unknown>>).map((c, index) => ({ index, ...c }))
           chunk({ role: 'assistant', tool_calls: calls }, null)

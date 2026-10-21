@@ -235,6 +235,34 @@ class TestWorktree:
         assert h.meta["worktree_requested"] is True
         assert h.meta["cwd"] == desktop_parent.cwd
 
+    def test_worktree_true_real_git(self, fake_gateway, tmp_path, tmp_home, monkeypatch):
+        """AT2.5 with the real worktree code: branch spawn/<slug>, frame cwd = worktree."""
+        import subprocess
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+               "GIT_COMMITTER_EMAIL": "t@t", "PATH": "/usr/bin:/bin:/usr/local/bin"}
+        for cmd in (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "init"]):
+            subprocess.run(["git", "-C", str(repo), *cmd], check=True, env=env, capture_output=True)
+        parent = make_parent(cwd=str(repo), git_repo_root=str(repo))
+        monkeypatch.setattr(tools, "_resolve_parent", lambda sid: parent)
+
+        result = call_spawn(base_args(worktree=True))
+        assert result["ok"] is True, result
+        wt_path = repo / ".worktrees" / "spawn-fix-flaky-test"
+        assert wt_path.is_dir()
+        branches = subprocess.run(["git", "-C", str(repo), "branch", "--list", "spawn/fix-flaky-test"],
+                                  check=True, capture_output=True, text=True).stdout
+        assert "spawn/fix-flaky-test" in branches
+        head = subprocess.run(["git", "-C", str(wt_path), "rev-parse", "--abbrev-ref", "HEAD"],
+                              check=True, capture_output=True, text=True).stdout.strip()
+        assert head == "spawn/fix-flaky-test"
+        (create_frame,) = create_frames(fake_gateway)
+        assert create_frame["params"]["cwd"] == str(wt_path)
+        assert read(result["handover_path"]).meta["worktree"] == {
+            "path": str(wt_path), "branch": "spawn/fix-flaky-test"}
+
     def test_worktree_false_keeps_parent_cwd(self, fake_gateway, desktop_parent, tmp_home):
         result = call_spawn(base_args(worktree=False))
         (create_frame,) = create_frames(fake_gateway)

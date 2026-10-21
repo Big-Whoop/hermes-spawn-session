@@ -333,6 +333,18 @@ class TestDetach:
         call_report(FULL)
         assert lifecycle.detach(Path(child.path))["status"] == "detached"
 
+    def test_spawn_refused_after_detach(self, child, parent, gw_calls, tmp_path, monkeypatch):
+        """AT3.1: a detached B is still a spawned child for D10."""
+        from tests.conftest import base_args, call_spawn, make_parent
+
+        lifecycle.detach(Path(child.path))
+        cwd = tmp_path / "proj"
+        monkeypatch.setattr(tools, "_resolve_parent", lambda sid: make_parent(
+            session_id=sid, cwd=str(cwd), git_repo_root=str(cwd)))
+        res = call_spawn(base_args(), session_id="ses-b")
+        assert res["ok"] is False
+        assert "one level only" in res["error"]
+
 
 # --------------------------------------------------------------------------- slash commands (AT4.5)
 
@@ -341,6 +353,33 @@ class TestDetach:
 def in_child(monkeypatch):
     monkeypatch.setattr(commands, "_current_session", lambda: "ses-b")
     monkeypatch.setattr(commands, "_lineage_ids", lambda sid: [sid])
+
+
+class TestPluginContextLookup:
+    """The REST routes import this package a second time (top-level
+    ``spawn_session``), apart from the ``hermes_plugins.<slug>`` copy that
+    ``register(ctx)`` filled in; injection must still find the context."""
+
+    def test_finds_context_registered_on_the_plugin_copy(self, monkeypatch):
+        import sys
+        import types
+
+        sent = []
+        ctx = types.SimpleNamespace(inject_message=lambda text, role, session_key: sent.append((session_key, text)) or True)
+        twin = types.ModuleType("hermes_plugins.spawn_session.spawn_session.delivery")
+        twin._plugin_ctx = ctx
+        monkeypatch.setitem(sys.modules, twin.__name__, twin)
+        monkeypatch.setattr(delivery, "_plugin_ctx", None)
+        assert delivery._default_inject("hello", "ses-a") is True
+        assert sent == [("ses-a", "hello")]
+
+    def test_no_context_anywhere_is_not_live(self, monkeypatch):
+        import sys
+
+        for name in [n for n in sys.modules if n.endswith(".spawn_session.delivery")]:
+            monkeypatch.delitem(sys.modules, name)
+        monkeypatch.setattr(delivery, "_plugin_ctx", None)
+        assert delivery._default_inject("hello", "ses-a") is False
 
 
 class TestCommands:

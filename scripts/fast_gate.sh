@@ -8,6 +8,12 @@
 #   4. hermes plugins doctor --ci          (temporary HERMES_HOME)
 #   5. hermes plugins validate --json (per-check evaluation with an allowlist)
 #   6. isolated `hermes serve --port 0`   (same temporary HERMES_HOME)
+#   7. Playwright backend project (e2e/, `--project=backend`): the e2e global
+#      setup starts its own sandbox HERMES_HOME + `hermes serve --port 0`;
+#      TMPDIR points under the gate's temp HOME, so that sandbox and the
+#      artifacts (E2E_ARTIFACTS_DIR) live there and are removed with it.
+#      The desktop project is EXCLUDED: Electron does not render in this
+#      sandbox; it runs only in the hermes-e2e k8s Job.
 #
 # Checks the repo state only. Live-install health: scripts/live_health.sh.
 #
@@ -19,6 +25,8 @@
 # Env:   HERMES_BIN   Hermes CLI (default /opt/hermes/bin/hermes)
 #        PYTHON       Python for pytest (default python3)
 #        SERVE_TIMEOUT seconds to wait for HERMES_BACKEND_READY (default 90)
+#        HERMES_PYTHON Python of the Hermes install, for the e2e helper
+#                      (default /opt/hermes/.venv/bin/python3)
 
 set -uo pipefail
 
@@ -52,16 +60,24 @@ record() { # record <stage> <PASS|FAIL> [detail]
     [ "$2" = "PASS" ] || FAILED=1
 }
 
+gate_pids() { # PIDs (ours, not $$) with HERMES_HOME or TMPDIR at/below $GATE_HOME
+    local p env
+    for p in $(pgrep -u "$(id -u)" 2>/dev/null); do
+        [ "$p" = "$$" ] && continue
+        env=$({ tr '\0' '\n' <"/proc/$p/environ"; } 2>/dev/null) || continue
+        if printf '%s\n' "$env" | grep -qE "^(HERMES_HOME|TMPDIR)=$GATE_HOME(/|\$)"; then
+            echo "$p"
+        fi
+    done
+}
+
 kill_gate_processes() {
-    # Kill every process of ours whose environment carries the temp HERMES_HOME.
+    # Kill every process of ours whose environment carries the temp HERMES_HOME
+    # or a HERMES_HOME below it (the e2e sandbox of stage 7).
     # `hermes serve` forks; killing only $SERVE_PID can leave the listener up.
     [ -n "$GATE_HOME" ] || return 0
     local p pids=()
-    for p in $(pgrep -u "$(id -u)" 2>/dev/null); do
-        if { tr '\0' '\n' <"/proc/$p/environ"; } 2>/dev/null | grep -qxF "HERMES_HOME=$GATE_HOME"; then
-            pids+=("$p")
-        fi
-    done
+    for p in $(gate_pids); do pids+=("$p"); done
     [ ${#pids[@]} -eq 0 ] && return 0
     kill "${pids[@]}" 2>/dev/null
     for _ in $(seq 1 20); do
@@ -95,7 +111,7 @@ echo "fast gate: $ROOT ($(git rev-parse --short HEAD 2>/dev/null || echo no-git)
 echo "hermes: $("$HERMES_BIN" --version 2>/dev/null | head -1)"
 
 # --- 1. pytest ---------------------------------------------------------------
-log "1/6 pytest"
+log "1/7 pytest"
 if out=$("$PYTHON" -m pytest -q 2>&1); then
     echo "$out" | tail -3
     record pytest PASS "$(echo "$out" | tail -1)"
@@ -105,7 +121,7 @@ else
 fi
 
 # --- 2. desktop smoke --------------------------------------------------------
-log "2/6 node scripts/smoke_desktop_plugin.mjs"
+log "2/7 node scripts/smoke_desktop_plugin.mjs"
 if out=$(node scripts/smoke_desktop_plugin.mjs 2>&1); then
     echo "$out" | tail -3
     record smoke PASS
@@ -117,7 +133,7 @@ fi
 # --- 3. deptry ---------------------------------------------------------------
 # Config lives in pyproject.toml [tool.deptry]: host-provided modules are
 # ignored for DEP001. deptry is installed into a throwaway venv only.
-log "3/6 deptry"
+log "3/7 deptry"
 DEPTRY_VENV="$SCRATCH/fast-gate-deptry-venv"
 if [ ! -x "$DEPTRY_VENV/bin/deptry" ]; then
     rm -rf "$DEPTRY_VENV"
@@ -151,7 +167,7 @@ printf 'plugins:\n  enabled:\n    - %s\n  disabled: []\n' "$PLUGIN_NAME" >"$GATE
 echo "temp HOME: $GATE_HOME"
 
 # --- 4. plugins doctor --ci --------------------------------------------------
-log "4/6 hermes plugins doctor --ci (temp HOME)"
+log "4/7 hermes plugins doctor --ci (temp HOME)"
 out=$(HERMES_HOME="$GATE_HOME" "$HERMES_BIN" plugins doctor --ci "$ROOT" 2>&1); rc=$?
 echo "$out" | grep -v 'install out of sync'
 if [ $rc -eq 0 ]; then
@@ -161,7 +177,7 @@ else
 fi
 
 # --- 5. plugins validate --json ----------------------------------------------
-log "5/6 hermes plugins validate --json"
+log "5/7 hermes plugins validate --json"
 json=$("$HERMES_BIN" plugins validate --json "$ROOT" 2>/dev/null)
 verdict=$(VALIDATE_JSON="$json" \
     ALLOWED_CHECKS="$(printf '%s\n' "${VALIDATE_ALLOWED_FAILED_CHECKS[@]}")" \
@@ -195,8 +211,12 @@ case "$verdict" in
 esac
 
 # --- 6. isolated serve -------------------------------------------------------
-log "6/6 isolated hermes serve --port 0"
-HERMES_HOME="$GATE_HOME" "$HERMES_BIN" serve --port 0 --host 127.0.0.1 --skip-build \
+log "6/7 isolated hermes serve --port 0"
+# Strip inherited HERMES_* (e.g. HERMES_DASHBOARD_OIDC_* inside a Hermes pod,
+# which switch the temp server to OIDC auth and make the route answer 401),
+# the same way e2e/support/backend.ts cleanEnv() does.
+mapfile -t HERMES_VARS < <(compgen -e | grep -E '^_?HERMES_')
+env "${HERMES_VARS[@]/#/-u}" HERMES_HOME="$GATE_HOME" "$HERMES_BIN" serve --port 0 --host 127.0.0.1 --skip-build \
     </dev/null >"$GATE_HOME/serve.out" 2>&1 &
 SERVE_PID=$!
 port=""
@@ -235,6 +255,61 @@ else
         record serve FAIL "routes not reported as mounted"
     else
         record serve PASS "port $port, route 200, no load errors"
+    fi
+fi
+
+# Stop stage 6's server before the e2e stage starts its own.
+kill_gate_processes
+
+# --- 7. Playwright backend project -------------------------------------------
+log "7/7 playwright --project=backend (e2e sandbox under temp HOME)"
+E2E_TMP="$GATE_HOME/e2e"
+mkdir -p "$E2E_TMP"
+lock_sha=$(sha256sum e2e/package-lock.json | cut -d' ' -f1)
+stamp="e2e/node_modules/.fast-gate-lock-sha256"
+npm_ok=1
+if [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$lock_sha" ]; then
+    echo "npm ci (node_modules missing or package-lock.json changed)"
+    if out=$(cd e2e && npm ci --include=dev --no-audit --no-fund 2>&1); then
+        echo "$lock_sha" >"$stamp"
+    else
+        echo "$out" | tail -20
+        npm_ok=0
+    fi
+else
+    echo "node_modules up to date (package-lock.json unchanged), skipping npm ci"
+fi
+if [ $npm_ok -eq 0 ]; then
+    record e2e FAIL "npm ci failed"
+else
+    # Force local sandbox mode BEFORE Playwright starts: strip every inherited
+    # HERMES_* (external-backend selectors HERMES_DESKTOP_REMOTE_URL/_TOKEN,
+    # HERMES_DASHBOARD_* auth) and every E2E_* (E2E_HERMES_HOME, E2E_STATE_FILE,
+    # E2E_PROJECT_DIR, E2E_MOCK_LLM_*, E2E_KEEP, ...), then set only the
+    # stage-owned values. externalBackend() therefore always returns null and
+    # the state file is pinned under $E2E_TMP.
+    e2e_python="${HERMES_PYTHON:-/opt/hermes/.venv/bin/python3}"
+    mapfile -t E2E_STRIP < <(compgen -e | grep -E '^(_?HERMES_|E2E_)')
+    out=$(cd e2e && env "${E2E_STRIP[@]/#/-u}" TMPDIR="$E2E_TMP" \
+        E2E_ARTIFACTS_DIR="$E2E_TMP/artifacts" E2E_STATE_FILE="$E2E_TMP/state.json" \
+        HERMES_BIN="$HERMES_BIN" HERMES_PYTHON="$e2e_python" \
+        npx playwright test --project=backend --reporter=line 2>&1); rc=$?
+    echo "$out" | grep -E '\[e2e\] backend|passed|failed|skipped|flaky|Error' | tail -40
+    # The e2e sandbox HERMES_HOME must live under this stage's TMPDIR.
+    if ! echo "$out" | grep -q "^\[e2e\] backend .* HERMES_HOME=$E2E_TMP/"; then
+        rc=99; echo "e2e sandbox HERMES_HOME is not under $E2E_TMP"
+    fi
+    summary=$(echo "$out" | grep -Eo '[0-9]+ (passed|failed|skipped|flaky)' | paste -sd' ' -)
+    sleep 1
+    left=$(gate_pids)
+    if [ -n "$left" ]; then
+        echo "leftover processes after e2e:"; for p in $left; do ps -o pid=,args= -p "$p"; done
+        kill_gate_processes
+        record e2e FAIL "leftover processes after stage"
+    elif [ $rc -eq 0 ]; then
+        record e2e PASS "$summary"
+    else
+        record e2e FAIL "rc=$rc ${summary}"
     fi
 fi
 

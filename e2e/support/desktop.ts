@@ -1,7 +1,7 @@
 // Desktop half: launch Hermes Desktop (source build) with Playwright `_electron`
 // in remote mode against the e2e backend. Mirrors the upstream v0.22.2 harness
 // (apps/desktop/e2e/fixtures.ts + e2e/core/remote-helpers.ts):
-// `electron <DESKTOP_ROOT> --disable-gpu --no-sandbox`, sandbox HOME + user-data,
+// `electron <DESKTOP_ROOT> --disable-gpu --no-sandbox` (+ --disable-dev-shm-usage), sandbox HOME + user-data,
 // credentials stripped, HERMES_DESKTOP_REMOTE_URL/_TOKEN to attach.
 //
 // Needs HERMES_DESKTOP_ROOT = a built hermes-agent `apps/desktop` checkout
@@ -12,7 +12,9 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-import type { BackendState } from './backend.js'
+import { execFileSync } from 'node:child_process'
+
+import { HERMES_BIN, PLUGIN, cleanEnv, type BackendState } from './backend.js'
 
 export const DESKTOP_ROOT = process.env.HERMES_DESKTOP_ROOT || ''
 export const HAS_DESKTOP = Boolean(DESKTOP_ROOT) && fs.existsSync(path.join(DESKTOP_ROOT, 'dist', 'electron-main.mjs'))
@@ -62,7 +64,8 @@ export async function launchDesktop(backend: BackendState): Promise<DesktopApp> 
 
   const app = await _electron.launch({
     executablePath: electronBinary(),
-    args: [DESKTOP_ROOT, '--disable-gpu', '--no-sandbox'],
+    // --disable-dev-shm-usage: containers have a 64 MB /dev/shm; without it every renderer chunk fails (net::ERR_FAILED, blank window).
+    args: [DESKTOP_ROOT, '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage'],
     env,
     cwd: DESKTOP_ROOT
   })
@@ -130,4 +133,41 @@ export async function catalogShot(page: Page, name: string): Promise<void> {
   const dir = path.resolve(process.env.E2E_ARTIFACTS_DIR || 'test-results', 'screenshots')
   fs.mkdirSync(dir, { recursive: true })
   await page.screenshot({ path: path.join(dir, `${name}.png`) })
+}
+
+/** Parent model ref of a seeded A (config default) and a higher-ranked child model. */
+export const CHEAP_MODEL_REF = 'custom:mock-e2e'
+export const PRICEY_MODEL_REF = 'custom:mock-e2e-pricey'
+
+/**
+ * AT2.3 prerequisite: rank the parent model below a pricier child model in the
+ * plugin config (`plugins.entries.spawn-session.cost_rank`). With an empty map
+ * both rank as infinity and no cost proposal is created. Idempotent: a
+ * `cost_rank` already written by the global setup is kept. The helper process
+ * reads config.yaml fresh, so no backend restart is needed for proposals.
+ */
+export function ensureCostRank(backend: BackendState): void {
+  const file = path.join(backend.hermesHome, 'config.yaml')
+  if (!fs.existsSync(file)) return
+  const text = fs.readFileSync(file, 'utf8')
+  if (/^\s+cost_rank:/m.test(text)) return
+  const anchor = `    ${PLUGIN}:\n`
+  if (!text.includes(anchor)) throw new Error(`config.yaml has no plugins.entries.${PLUGIN} block`)
+  const block = `      cost_rank:\n        "${CHEAP_MODEL_REF}": 1\n        "${PRICEY_MODEL_REF}": 5\n`
+  fs.writeFileSync(file, text.replace(anchor, anchor + block))
+}
+
+/** AT2.4: register `folder` as a Desktop project in the backend's HERMES_HOME (`hermes project create`). */
+export function registerProject(backend: BackendState, name: string, folder: string): void {
+  execFileSync(HERMES_BIN, ['project', 'create', name, folder], {
+    env: { ...cleanEnv(), ...(backend.sandboxRoot ? { HOME: path.join(backend.sandboxRoot, 'home') } : {}), HERMES_HOME: backend.hermesHome },
+    encoding: 'utf8',
+    timeout: 60_000,
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+}
+
+/** Host toasts (sonner) and alerts; used to assert that no plugin error surfaced. */
+export function toasts(page: Page): Locator {
+  return page.locator('[data-sonner-toast], [role="alert"], [role="status"]')
 }
