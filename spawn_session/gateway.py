@@ -155,6 +155,27 @@ def set_session_title(session_id: str, title: str) -> dict:
     return rpc("session.title", {"session_id": _live_runtime_id(session_id), "title": title})
 
 
+def session_toolsets(session_id: str) -> dict[str, tuple[bool, list[str]]]:
+    """Every toolset with ``(enabled for session_id, resolved tool names)``.
+
+    Uses ``tools.list`` (session-scoped: the live agent's enabled set, else what
+    the session's profile would build with). Raises :class:`GatewayError` when
+    the answer cannot be read or nothing is enabled; callers must then refuse
+    rather than grant (D12).
+    """
+    res = rpc("tools.list", {"session_id": _live_runtime_id(session_id)})
+    rows = res.get("toolsets")
+    if not isinstance(rows, list):
+        raise GatewayError("tools.list returned no toolsets")
+    out: dict[str, tuple[bool, list[str]]] = {}
+    for row in rows:
+        if isinstance(row, dict) and isinstance(row.get("name"), str):
+            out[row["name"]] = (bool(row.get("enabled")), [str(t) for t in (row.get("tools") or [])])
+    if not any(enabled for enabled, _ in out.values()):
+        raise GatewayError("tools.list reported no enabled toolsets for the session")
+    return out
+
+
 def archive_session(session_id: str) -> dict:
     """Archive (soft-hide, messages kept) a session + lineage (``session.archive``).
 

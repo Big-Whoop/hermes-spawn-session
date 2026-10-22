@@ -63,6 +63,7 @@ _create_worktree: Callable[..., wt_mod.Worktree] = wt_mod.create_worktree
 _broadcast_event: Callable[[str, dict], None] = _default_broadcast
 _lineage_ids: Callable[[str], list[str]] = parent_mod.lineage_ids
 _project_for_path: Callable[[Optional[str]], Optional[project_mod.ProjectInfo]] = project_mod.project_for_path
+_parent_toolsets: Callable[[str], dict[str, tuple[bool, list[str]]]] = gateway.session_toolsets
 
 
 def _child_in_lineage(index: state_mod.StateIndex, session_id: str) -> Optional[str]:
@@ -206,6 +207,39 @@ def _validate_toolsets(allowed_toolsets: Any) -> Optional[list[str]]:
     return [t for t in deduped if t != "spawn-session"]
 
 
+def _check_toolset_superset(parent_session_id: str, requested: Optional[list[str]]) -> None:
+    """D12 / SPEC 4.1: ``allowed_toolsets`` may only narrow A's toolsets.
+
+    A requested toolset is within A's rights when every tool it resolves to is
+    provided by one of A's enabled toolsets (A may have a composite toolset such
+    as ``hermes-desktop`` enabled rather than ``file`` itself). If A's toolsets
+    cannot be determined, the narrowing is refused, never granted.
+    """
+    if not requested:
+        return
+    try:
+        rows = _parent_toolsets(parent_session_id)
+    except Exception as exc:
+        raise SpawnError(
+            f"cannot determine the parent session's toolsets ({exc}); allowed_toolsets "
+            "is refused because it may only narrow the parent's toolsets (D12)"
+        ) from None
+    enabled_names = {name for name, (enabled, _) in rows.items() if enabled}
+    parent_tools = {t for enabled, tools in rows.values() if enabled for t in tools}
+    exceeding = []
+    for ts in requested:
+        if ts in enabled_names:
+            continue
+        _, ts_tools = rows.get(ts, (False, []))
+        if not ts_tools or not set(ts_tools) <= parent_tools:
+            exceeding.append(ts)
+    if exceeding:
+        raise SpawnError(
+            f"allowed_toolsets exceeds the parent session's toolsets: {', '.join(sorted(set(exceeding)))}; "
+            "allowed_toolsets may only narrow the parent's toolsets (D12)"
+        )
+
+
 def _handover_base_dir(parent_cwd: Optional[str]) -> Path:
     """``<A.cwd>/.hermes/handovers``; profile fallback when cwd is unwritable."""
     from .config import DEFAULT_HANDOVER_DIR
@@ -281,6 +315,9 @@ def _plan_and_spawn(args: dict[str, Any], kwargs: dict[str, Any]) -> dict[str, A
     index = _load_index()
     if _child_in_lineage(index, a.session_id) is not None:
         return {"ok": False, "error": D10_MESSAGE}
+
+    # ---- D12: allowed_toolsets may only narrow A's toolsets
+    _check_toolset_superset(a.session_id, allowed_toolsets)
 
     # ---- D6: model resolution
     if args.get("model") is None and ":" not in a.model_ref:

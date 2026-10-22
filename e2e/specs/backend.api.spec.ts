@@ -375,11 +375,26 @@ test('AT2.6 allowed_toolsets: B is narrowed (guard blocks a foreign tool), spawn
   expect(unknown.error).toMatch(/unknown toolset/)
 })
 
-test.fixme('AT2.6 allowed_toolsets: a superset of A\'s toolsets is rejected', async () => {
-  // Not implemented: tools._validate_toolsets checks names against the
-  // registry only and never compares the list with A's toolsets (SPEC §4.1
-  // says "may only narrow A's toolsets"). Open SPEC mismatch, see
-  // docs/at-matrix.md; needs a decision before a test can assert it.
+test('AT2.6 allowed_toolsets: a superset of A\'s toolsets is rejected, a narrowing is accepted', async () => {
+  // A's toolsets are pinned to file + web via the gateway's operator pin
+  // (HERMES_TUI_TOOLSETS); the helper's in-process gateway answers tools.list
+  // for A from it, exactly as the serve does for a live session.
+  const a = seedParent(state)
+  const pin = { HERMES_TUI_TOOLSETS: 'file,web' }
+  const spawn = (title: string, ...toolsets: string[]) => hermesHelper(state, [
+    'spawn', '--session-id', a, '--title', uniqueTitle(title), '--task', 'x', '--model', MOCK_MODEL_REF,
+    ...toolsets.flatMap(t => ['--allowed-toolset', t])
+  ], pin)
+
+  const superset = spawn('E2E superset', 'file', 'terminal')
+  expect(superset.ok, JSON.stringify(superset)).toBe(false)
+  expect(superset.error).toMatch(/exceeds the parent session's toolsets: terminal/)
+
+  const narrowed = spawn('E2E narrowing', 'file', 'spawn-session')
+  expect(narrowed.ok, JSON.stringify(narrowed)).toBe(true)
+  const toolsets = fs.readFileSync(narrowed.handover_path, 'utf8').match(/allowed_toolsets:\n((?:\s*- .+\n)+)/)?.[1] ?? ''
+  expect(toolsets).toMatch(/- file/)
+  expect(toolsets).not.toMatch(/spawn-session/)
 })
 
 test('AT3.2 D10 cap: the 4th running agent spawn is a "limit reached" proposal, ⌘K spawns are not capped', async () => {

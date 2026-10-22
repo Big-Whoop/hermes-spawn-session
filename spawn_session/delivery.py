@@ -23,10 +23,14 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from . import gateway
 from . import parent as parent_mod
 from .handover import Handover, HandoverError, read as handover_read, update_status, write as handover_write
 
 logger = logging.getLogger("hermes.spawn-session")
+
+# Seam: retitle a session (detach writes ``pending_title`` when it failed).
+_set_title: Callable[[str, str], dict] = gateway.set_session_title
 
 # --------------------------------------------------------------------------- seams
 
@@ -230,7 +234,7 @@ def deliver_pending(handover_paths: list[Path], parent_session_id: str, *, timeo
 
     Backend action behind the desktop "N open report(s) -> Deliver" banner.
     """
-    out: dict[str, Any] = {"reports": [], "notices": 0}
+    out: dict[str, Any] = {"reports": [], "notices": 0, "titles": 0}
     for p in handover_paths:
         try:
             h = handover_read(p)
@@ -246,6 +250,18 @@ def deliver_pending(handover_paths: list[Path], parent_session_id: str, *, timeo
             if not remaining:
                 h.meta.pop("pending_notices", None)
             handover_write(h)
+        pending_title = h.meta.get("pending_title")
+        child = h.meta.get("child_session_id")
+        if pending_title and child:
+            # D11: a detach whose retitle failed (B not live) is retried here.
+            try:
+                _set_title(str(child), str(pending_title))
+            except gateway.GatewayError as exc:
+                logger.info("pending title for %s still not applied: %s", child, exc)
+            else:
+                h.meta.pop("pending_title", None)
+                handover_write(h)
+                out["titles"] += 1
         if h.status == "reported":
             res = deliver_report(p, settings_timeout_s=timeout_s)
             out["reports"].append({"handover_id": h.handover_id, **res})
