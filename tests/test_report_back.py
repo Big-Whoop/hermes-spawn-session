@@ -329,6 +329,26 @@ class TestDetach:
         with pytest.raises(lifecycle.LifecycleError):
             lifecycle.abandon(Path(child.path))
 
+    def test_pending_title_applied_by_deliver_pending(self, child, parent, gw_calls, monkeypatch):
+        from spawn_session import delivery, gateway
+
+        def down(sid, title):
+            raise gateway.GatewayError("B not live")
+        monkeypatch.setattr(lifecycle, "_set_title", down)
+        res = lifecycle.detach(Path(child.path))
+        assert res["title_set"] is False
+        assert read(child.path).meta["pending_title"] == "\u21b3 Detached: Fix flaky test"
+
+        monkeypatch.setattr(delivery, "_set_title", down)
+        assert commands.action_deliver_pending("ses-a")["titles"] == 0
+        assert read(child.path).meta["pending_title"]
+
+        applied: list = []
+        monkeypatch.setattr(delivery, "_set_title", lambda sid, t: applied.append((sid, t)) or {})
+        assert commands.action_deliver_pending("ses-a")["titles"] == 1
+        assert applied == [("ses-b", "\u21b3 Detached: Fix flaky test")]
+        assert "pending_title" not in read(child.path).meta
+
     def test_detach_after_delivered(self, child, parent, gw_calls):
         call_report(FULL)
         assert lifecycle.detach(Path(child.path))["status"] == "detached"

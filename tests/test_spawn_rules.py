@@ -298,6 +298,44 @@ class TestAllowedToolsets:
         result = call_spawn(base_args(allowed_toolsets=["anything"]))
         assert result["ok"] is True
 
+    # D12 / SPEC 4.1: allowed_toolsets may only narrow A's toolsets.
+    def test_superset_of_parent_rejected(self, fake_gateway, desktop_parent, tmp_home):
+        fake_gateway.toolsets = {
+            "file": (True, ["read_file"]), "web": (True, ["web_search"]), "terminal": (False, ["terminal"]),
+        }
+        result = call_spawn(base_args(allowed_toolsets=["file", "terminal"]))
+        assert result["ok"] is False
+        assert "exceeds the parent session's toolsets: terminal" in result["error"]
+        assert not [f for f in fake_gateway.frames if f["method"] == "session.create"]
+
+    def test_narrowing_within_composite_parent_toolset_accepted(self, fake_gateway, desktop_parent, tmp_home):
+        # A has only a composite toolset enabled; `file` is covered by its tools.
+        fake_gateway.toolsets = {
+            "hermes-desktop": (True, ["read_file", "write_file", "web_search"]),
+            "file": (False, ["read_file", "write_file"]),
+            "terminal": (False, ["terminal"]),
+        }
+        result = call_spawn(base_args(allowed_toolsets=["file", "spawn-session"]))
+        assert result["ok"] is True
+        assert read(result["handover_path"]).meta["allowed_toolsets"] == ["file"]
+
+    def test_unknown_parent_toolsets_refuse_narrowing(self, fake_gateway, desktop_parent, tmp_home):
+        fake_gateway.fail_methods.add("tools.list")
+        result = call_spawn(base_args(allowed_toolsets=["file"]))
+        assert result["ok"] is False
+        assert "cannot determine the parent session's toolsets" in result["error"]
+
+    def test_seam_used_and_unrestricted_spawn_skips_check(self, fake_gateway, desktop_parent, tmp_home, monkeypatch):
+        calls: list[str] = []
+        def seam(sid):
+            calls.append(sid)
+            return {"file": (True, ["read_file"])}
+        monkeypatch.setattr(tools, "_parent_toolsets", seam)
+        assert call_spawn(base_args())["ok"] is True
+        assert calls == []
+        assert call_spawn(base_args(allowed_toolsets=["web"]))["ok"] is False
+        assert calls == ["ses-parent-1"]
+
 
 # --------------------------------------------------------------------------- D13
 

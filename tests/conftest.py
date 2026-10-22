@@ -26,6 +26,12 @@ class FakeGateway:
         self.frames: list[dict[str, Any]] = []
         self.fail_methods: set[str] = set()
         self.create_count = 0
+        # tools.list answer for the parent (D12 superset check):
+        # name -> (enabled, resolved tools). Default: everything enabled.
+        self.toolsets: dict[str, tuple[bool, list[str]]] = {
+            name: (True, [f"{name}_tool"])
+            for name in ("file", "web", "terminal", "project", "spawn-session", "anything")
+        }
 
     def __call__(self, frame: dict[str, Any]) -> Optional[dict]:
         self.frames.append(frame)
@@ -45,6 +51,10 @@ class FakeGateway:
             }
         if method == "prompt.submit":
             return {"id": frame.get("id"), "result": {"ok": True}}
+        if method == "tools.list":
+            return {"id": frame.get("id"), "result": {"toolsets": [
+                {"name": n, "enabled": en, "tools": list(t)} for n, (en, t) in self.toolsets.items()
+            ]}}
         if method == "session.title":
             return {"id": frame.get("id"), "result": {"title": frame["params"].get("title", "")}}
         return {"id": frame.get("id"), "error": {"code": -32601, "message": f"unknown {method}"}}
@@ -129,6 +139,7 @@ def _reset_tools_seams():
     tools._broadcast_event = tools._default_broadcast
     tools._lineage_ids = parent_mod.lineage_ids
     tools._project_for_path = project_mod.project_for_path
+    tools._parent_toolsets = gateway.session_toolsets
     tools.set_settings_override(None)
     _guard_cache_clear()
 

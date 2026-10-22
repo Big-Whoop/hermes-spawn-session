@@ -39,14 +39,14 @@ export class PluginApi {
 }
 
 /** Run e2e/support/hermes_helper.py against the backend's HERMES_HOME; returns its JSON line. */
-export function hermesHelper(state: BackendState, args: string[]): any {
+export function hermesHelper(state: BackendState, args: string[], extraEnv: Record<string, string> = {}): any {
   const script = path.join(E2E_DIR, 'support', 'hermes_helper.py')
   let out: string
   try {
     out = execFileSync(HERMES_PYTHON, [script, ...args], {
       // Same isolation as the backend: no inherited HERMES_* / credentials,
       // and the sandbox HOME when global setup owns the backend.
-      env: { ...cleanEnv(), ...(state.sandboxRoot ? { HOME: `${state.sandboxRoot}/home` } : {}), HERMES_HOME: state.hermesHome },
+      env: { ...cleanEnv(), ...(state.sandboxRoot ? { HOME: `${state.sandboxRoot}/home` } : {}), HERMES_HOME: state.hermesHome, ...extraEnv },
       encoding: 'utf8',
       timeout: 90_000,
       stdio: ['ignore', 'pipe', 'pipe']
