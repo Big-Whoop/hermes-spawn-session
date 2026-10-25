@@ -54,6 +54,7 @@ inside Hermes's core constraints is still unverified:
     ⚠ private core imports (catalog rule 9): spawn_session/commands.py:35
       gateway.session_context.get_session_env; spawn_session/gateway.py:47
       tui_gateway.server.handle_request.
+      (Since v0.22.5 only spawn_session/gateway.py:47 is left; see R15.)
     ◆ Isolation — runs in the plugin host (plugins.isolation: host)
       · dashboard backend API is served through the plugin host (buffered responses)
     Validation failed.
@@ -101,7 +102,7 @@ rules in [S1]/[S2].
 | R2 | `plugin.yaml` plus an entrypoint at the pin | [S1] | MET | `plugin.yaml:1-9`, `__init__.py:32`, `desktop/plugin.js:550`; validator "loadable ✓" |
 | R3 | Manifest `name`, `version`, `description` | [S3 dev-guide] / validator | MET | `plugin.yaml:1-7`; validator "manifest fields ✓" |
 | R4 | Catalog name `[a-z0-9_-]{1,64}`, no name conflict | [S2] Entry schema, Names | MET | `spawn-session`; no `plugin-catalog/spawn-session.yaml` in the upstream listing (checked 2026-10-17 via GitHub contents API) |
-| R5 | `requires_hermes` is a SemVer floor, not newer than the current release (rule 14) | [S2] rule 14 | MET | `plugin.yaml:11` `requires_hermes: ">=0.22.2"` (decision Q4, card t_1edf7ee7); validator "requires_hermes ✓ spec '>=0.22.2' parses". Matches README.md:25-26 "built and tested against v0.22.2" |
+| R5 | `requires_hermes` is a SemVer floor, not newer than the current release (rule 14) | [S2] rule 14 | MET | `plugin.yaml:11` `requires_hermes: ">=0.22.5"` (raised from `>=0.22.2` on 2026-10-25, user decision: the slash commands need the v0.22.5 calling-session keywords); validator "requires_hermes ✓". Matches README.md Requirements |
 | R6 | `version` matches the pinned code, quoted in the entry (rule 14) | [S1][S2] | MET (keep in sync) | `plugin.yaml:2` = `pyproject.toml` version = `dashboard/manifest.json` version = 0.1.0 |
 | R7 | `license` (SPDX) in the manifest, compatible license | [S3] Manifest v2 reference | MET | `plugin.yaml:10` `license: MIT` (decision Q4, card t_1edf7ee7), matching `LICENSE` and README.md:305-307 |
 | R8 | `manifest_version` (optional; absent = v1, supported forever) | [S3] Manifest v2 reference | N/A | v1 manifest is fine; set `manifest_version: 2` only if we adopt v2 fields |
@@ -111,7 +112,7 @@ rules in [S1]/[S2].
 | R12 | Desktop: theme variables only, no hardcoded colours | [S10] "Style with theme variables" | MET | a grep for `#hex` / `rgb(` in `desktop/plugin.js` finds no hits |
 | R13 | Desktop: `defaultEnabled: false` for opt-in plugins | [S10] (optional; default `true`) | MET | `desktop/plugin.js` exports `defaultEnabled: false` (decision Q3, user 2026-10-17); the desktop half stays off until enabled in Capabilities → Plugins. The Python half is opt-in via `plugins.enabled` [S3 user-guide]. `scripts/smoke_desktop_plugin.mjs` asserts the flag |
 | R14 | No runtime overrides of core (rule 9) | [S2] rule 9 | MET | validator "no core override ✓" |
-| R15 | Only public surfaces; private core imports are warned (rule 9) | [S2] rule 9; [S1] Before you submit | NOT MET, no public alternative (audited 2026-10-17, card t_d28ed43c) | `spawn_session/commands.py:35` imports `gateway.session_context.get_session_env`; `spawn_session/gateway.py:47` imports `tui_gateway.server.handle_request` (the session RPC door for creating child B). Both stay, guarded; the reasons are in SPEC.md §3.1. Upstream hook request filed as NousResearch/hermes-agent#140199 (2026-10-17, open; see `docs/upstream-hook-request.md`). A warning, not a failure. Precedent plan-mode was listed with a disclosure of "eight groups of internal Hermes seams … each guarded with a documented fallback" [S9] |
+| R15 | Only public surfaces; private core imports are warned (rule 9) | [S2] rule 9; [S1] Before you submit | NOT MET, one import left (audited 2026-10-17, card t_d28ed43c; updated 2026-10-25) | `spawn_session/commands.py` no longer imports `gateway.session_context.get_session_env`: since v0.22.5 (#140997) command handlers get the calling session as keywords. Remaining: `spawn_session/gateway.py:47` imports `tui_gateway.server.handle_request` (the session RPC door for creating child B). Both stay, guarded; the reasons are in SPEC.md §3.1. Upstream hook request filed as NousResearch/hermes-agent#140199 (2026-10-17, open; see `docs/upstream-hook-request.md`). A warning, not a failure. Precedent plan-mode was listed with a disclosure of "eight groups of internal Hermes seams … each guarded with a documented fallback" [S9] |
 | R16 | Dependency policy: oldest compatible floor plus upper bound (rule 10) | [S2] rule 10; [S3] Dependency security policy | MET | `pyproject.toml` `PyYAML>=6,<7` |
 | R17 | Deps resolve under core constraints (`--install-deps`) (rule 14) | [S1][S2] | UNCLEAR | not run with `--install-deps` here; PyYAML is very likely already a core dependency |
 | R18 | Host modules not declared as deps | [S3] Python dependencies | MET | `pyproject.toml` header comment; `tests/test_dependencies.py` |
@@ -160,6 +161,9 @@ Not implemented on this card. Each item is one suggested follow-up card.
   The per-call reasons are in SPEC.md §3.1. The upstream issue was filed
   as NousResearch/hermes-agent#140199 (2026-10-17, open; Q2). Until
   a hook exists, disclose both seams in the README (G5) like plan-mode did.
+  Update 2026-10-25: `gateway.session_context` is gone (Hermes v0.22.5
+  command-handler keywords, `requires_hermes: ">=0.22.5"`); only
+  `tui_gateway.server.handle_request` remains.
 - **G4: add `requires_hermes: ">=0.22.2"`** (or the oldest release actually
   tested) to `plugin.yaml` and the entry. Add `license: MIT`, plus optionally
   `manifest_version: 2` and `tags`. **Done in `plugin.yaml` (card t_1edf7ee7):**

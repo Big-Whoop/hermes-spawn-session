@@ -42,9 +42,9 @@ PLUGIN_NAME="spawn-session"
 #                    ship inside the plugin tree (deferred, see
 #                    docs/catalog-contribution.md).
 # Warnings are allowlisted by prefix:
-#   private core imports - catalog rule 9 (gateway.session_context,
-#                    tui_gateway.server); deferred until upstream exposes a
-#                    public seam (NousResearch/hermes-agent#140199).
+#   private core imports - catalog rule 9 (tui_gateway.server); deferred
+#                    until upstream exposes a public session-creation seam
+#                    (NousResearch/hermes-agent#140199, part 2).
 # Everything else must pass.
 VALIDATE_ALLOWED_FAILED_CHECKS=("security scan")
 VALIDATE_ALLOWED_WARNING_PREFIXES=("private core imports")
