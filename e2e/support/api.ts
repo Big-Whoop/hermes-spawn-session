@@ -38,9 +38,9 @@ export class PluginApi {
   post<T = any>(route: string, body: unknown): Promise<ApiResult<T>> { return this.call<T>('POST', route, body) }
 }
 
-/** Run e2e/support/hermes_helper.py against the backend's HERMES_HOME; returns its JSON line. */
+/** Run tests/e2e_support/hermes_helper.py against the backend's HERMES_HOME; returns its JSON line. */
 export function hermesHelper(state: BackendState, args: string[], extraEnv: Record<string, string> = {}): any {
-  const script = path.join(E2E_DIR, 'support', 'hermes_helper.py')
+  const script = path.join(E2E_DIR, '..', 'tests', 'e2e_support', 'hermes_helper.py')
   let out: string
   try {
     out = execFileSync(HERMES_PYTHON, [script, ...args], {

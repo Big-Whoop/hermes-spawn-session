@@ -1,9 +1,9 @@
 """Slash commands in child session B and backend actions for A's buttons (SPEC 4.3, D4/D11).
 
-Plugin slash-command handlers receive only the raw argument string. The
-calling session is read from the session context the Desktop/TUI gateway binds
-around plugin commands (``HERMES_SESSION_KEY`` = the durable session id; see
-``gateway.session_context.get_session_env``).
+The calling session comes from the context keywords Hermes (>= v0.22.5) passes
+to plugin command handlers that declare them (``session_key``/``session_id``;
+developer guide, "Calling-session context"). In the Desktop/TUI gateway
+``session_key`` is the durable session id.
 
 Commands:
 - ``/report [note]`` — asks B's agent (injected user message) to call ``report_back``.
@@ -18,8 +18,8 @@ Backend actions (for the desktop half's status-card buttons in A, later card):
 from __future__ import annotations
 
 import json
+import contextvars
 import logging
-import os
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -28,15 +28,14 @@ from . import delivery, lifecycle, parent as parent_mod, state as state_mod
 logger = logging.getLogger("hermes.spawn-session")
 
 
-def _default_current_session() -> str:
-    # Private seam, no public alternative (SPEC 3.1, catalog rule 9): command
-    # handlers get only raw_args. Guarded: falls back to os.environ.
-    try:
-        from gateway.session_context import get_session_env
+# Calling-session context of the running command, bound by :func:`_guard`.
+_caller: contextvars.ContextVar[tuple[str, str]] = contextvars.ContextVar(
+    "spawn_session_caller", default=("", ""))
 
-        return get_session_env("HERMES_SESSION_KEY") or get_session_env("HERMES_SESSION_ID") or ""
-    except Exception:
-        return os.environ.get("HERMES_SESSION_KEY") or os.environ.get("HERMES_SESSION_ID") or ""
+
+def _default_current_session() -> str:
+    session_key, session_id = _caller.get()
+    return session_key or session_id
 
 
 # Seams (tests replace these).
@@ -58,8 +57,10 @@ def _child_handover() -> Path:
     return lifecycle.handover_for_session(_load_index(), sid, _lineage_ids)
 
 
-def _guard(fn: Callable[[str], str]) -> Callable[[str], str]:
-    def wrapped(raw_args: str = "") -> str:
+def _guard(fn: Callable[[str], str]) -> Callable[..., str]:
+    # Declaring the keywords opts in to Hermes's calling-session context.
+    def wrapped(raw_args: str = "", *, session_key: str = "", session_id: str = "") -> str:
+        token = _caller.set((str(session_key or ""), str(session_id or "")))
         try:
             return fn((raw_args or "").strip())
         except lifecycle.LifecycleError as exc:
@@ -67,6 +68,8 @@ def _guard(fn: Callable[[str], str]) -> Callable[[str], str]:
         except Exception as exc:  # a slash command must never crash the host
             logger.exception("spawn-session command failed")
             return f"spawn-session: internal error: {exc}"
+        finally:
+            _caller.reset(token)
 
     wrapped.__name__ = fn.__name__
     wrapped.__doc__ = fn.__doc__
@@ -129,7 +132,7 @@ def cmd_spawn_cleanup(arg: str) -> str:
             else f"Kept worktree {res['worktree']}.")
 
 
-COMMANDS: dict[str, tuple[Callable[[str], str], str, str]] = {
+COMMANDS: dict[str, tuple[Callable[..., str], str, str]] = {
     "report": (cmd_report, "Spawned session: ask the agent to report back to the parent", "[note]"),
     "abandon": (cmd_abandon, "Spawned session: abort and notify the parent", "[reason]"),
     "detach": (cmd_detach, "Spawned session: detach from the parent (irreversible)", "confirm"),

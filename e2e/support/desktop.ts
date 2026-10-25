@@ -14,7 +14,7 @@ import * as path from 'node:path'
 
 import { execFileSync } from 'node:child_process'
 
-import { HERMES_BIN, PLUGIN, cleanEnv, type BackendState } from './backend.js'
+import { HERMES_BIN, PLUGIN, REPO_ROOT, cleanEnv, type BackendState } from './backend.js'
 
 export const DESKTOP_ROOT = process.env.HERMES_DESKTOP_ROOT || ''
 export const HAS_DESKTOP = Boolean(DESKTOP_ROOT) && fs.existsSync(path.join(DESKTOP_ROOT, 'dist', 'electron-main.mjs'))
@@ -45,6 +45,13 @@ export async function launchDesktop(backend: BackendState): Promise<DesktopApp> 
   // Fixed window size for stable screenshots (as upstream fixtures).
   fs.writeFileSync(path.join(userDataDir, 'window-state.json'), JSON.stringify({ x: 0, y: 0, width: 1280, height: 860, isMaximized: false }))
   fs.writeFileSync(path.join(userDataDir, 'zoom-state.json'), JSON.stringify({ zoomLevel: 0 }))
+  // Electron loads desktop halves from ITS OWN HERMES_HOME, even in remote mode:
+  // it copies plugins/<name>/desktop/plugin.js into desktop-plugins/<name> at
+  // startup. Without this link the Plugins tab shows the desktop half as
+  // "unavailable (remote backend)".
+  const desktopHome = path.join(root, 'hermes-home')
+  fs.mkdirSync(path.join(desktopHome, 'plugins'), { recursive: true })
+  fs.symlinkSync(REPO_ROOT, path.join(desktopHome, 'plugins', PLUGIN))
 
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -52,25 +59,33 @@ export async function launchDesktop(backend: BackendState): Promise<DesktopApp> 
   }
   Object.assign(env, {
     HOME: root,
-    HERMES_HOME: path.join(root, 'hermes-home'),
+    HERMES_HOME: desktopHome,
     HERMES_DESKTOP_USER_DATA_DIR: userDataDir,
     HERMES_DESKTOP_IGNORE_EXISTING: '1',
     HERMES_DESKTOP_APP_NAME: `SpawnSessionE2E-${Date.now()}`,
     HERMES_DESKTOP_SKIP_QUIT_CONFIRM: '1',
     HERMES_DESKTOP_SKIP_PROTOCOL_REGISTRATION: '1',
     HERMES_DESKTOP_REMOTE_URL: backend.url,
-    HERMES_DESKTOP_REMOTE_TOKEN: backend.token
+    HERMES_DESKTOP_REMOTE_TOKEN: backend.token,
+    // The specs match English labels; the app follows the system locale.
+    LANG: 'en_US.UTF-8',
+    LANGUAGE: 'en_US',
+    LC_ALL: 'en_US.UTF-8'
   })
 
   const app = await _electron.launch({
     executablePath: electronBinary(),
     // --disable-dev-shm-usage: containers have a 64 MB /dev/shm; without it every renderer chunk fails (net::ERR_FAILED, blank window).
-    args: [DESKTOP_ROOT, '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage'],
+    // E2E_ELECTRON_ARGS: extra switches, e.g. `--ozone-platform=headless` to run
+    // without a display server (no xvfb needed).
+    args: [DESKTOP_ROOT, '--disable-gpu', '--no-sandbox', '--disable-dev-shm-usage', '--lang=en-US', ...(process.env.E2E_ELECTRON_ARGS || '').split(/\s+/).filter(Boolean)],
     env,
     cwd: DESKTOP_ROOT
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
+  // Headless ozone ignores window-state.json; size the window explicitly.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1280, 860))
   return {
     app, page, userDataDir,
     close: async () => {
@@ -85,13 +100,30 @@ export async function waitForShell(page: Page): Promise<void> {
   await expect(page.locator('[data-slot="composer-root"]').first()).toBeVisible({ timeout: 120_000 })
 }
 
-/** Open the command palette (⌘K / Ctrl+K) and run a command by its label. */
-export async function runPaletteCommand(page: Page, label: string): Promise<void> {
+/**
+ * Open the command palette (⌘K / Ctrl+K) and run a command by its label.
+ * Extra labels pick rows in the submenu the previous command opened
+ * (e.g. 'Change color mode…', 'Dark'); a submenu row that keeps the palette
+ * open is closed with Escape afterwards.
+ */
+export async function runPaletteCommand(page: Page, label: string, ...subLabels: string[]): Promise<void> {
   await page.keyboard.press('ControlOrMeta+K')
   const input = page.getByRole('combobox').or(page.getByPlaceholder(/search|command|type/i)).first()
   await expect(input).toBeVisible()
-  await input.fill(label)
-  await page.getByRole('option', { name: label }).first().click()
+  for (const step of [label, ...subLabels]) {
+    await input.fill(step)
+    // v0.22.2: click() on the option never passes Playwright's stability check,
+    // and nothing is highlighted after typing, so a bare Enter does nothing.
+    // Walk the highlight with ArrowDown to the wanted row, then Enter (the
+    // keyboard path a user takes).
+    const option = page.getByRole('option', { name: step, exact: true }).first()
+    await expect(option).toBeVisible()
+    const count = await page.getByRole('option').count()
+    for (let i = 0; i < count && (await option.getAttribute('aria-selected')) !== 'true'; i++) await input.press('ArrowDown')
+    await expect(option).toHaveAttribute('aria-selected', 'true')
+    await input.press('Enter')
+  }
+  if (subLabels.length && (await input.isVisible())) await input.press('Escape')
 }
 
 /**
@@ -99,8 +131,7 @@ export async function runPaletteCommand(page: Page, label: string): Promise<void
  *
  * No seeded-state mechanism is documented (research lane 2, "untested"), so this
  * clicks the toggle in Capabilities -> Plugins as the README tells users to.
- * The navigation selectors are best guesses from the docs wording and must be
- * confirmed on the first real run (record fixes here).
+ * Selectors verified on v0.22.2 and v0.22.5.
  */
 export async function enableDesktopPlugin(page: Page): Promise<void> {
   const openCapabilities = async () => {
@@ -109,11 +140,20 @@ export async function enableDesktopPlugin(page: Page): Promise<void> {
     await runPaletteCommand(page, 'Capabilities')
   }
   await openCapabilities()
-  await page.getByRole('tab', { name: /plugins/i }).or(page.getByRole('link', { name: /^plugins$/i })).first().click()
-  const row = page.locator('li, [role="row"], [data-slot*="card"], div').filter({ hasText: PLUGIN_NAME }).last()
-  const rescan = page.getByRole('button', { name: /rescan/i })
-  if (!(await row.isVisible().catch(() => false)) && (await rescan.isVisible().catch(() => false))) await rescan.click()
-  const toggle = row.getByRole('switch').first()
+  await page.getByRole('button', { name: /^plugins$/i }).or(page.getByRole('tab', { name: /^plugins$/i })).first().click()
+  // v0.22.2: one table row per package, with a "Desktop: <package>" switch.
+  // v0.22.5: the tab is a catalog; a git/symlink install has no discover
+  // section, so search for it and open its card. The detail pane keeps the
+  // per-half "Desktop: <package>" switch.
+  const toggle = page.getByRole('switch', { name: `Desktop: ${PLUGIN_NAME}` })
+  const search = page.getByPlaceholder(/search plugins/i)
+  await expect(toggle.or(search).first()).toBeVisible()
+  if (!(await toggle.isVisible())) {
+    // The package key ("spawn-session") finds nothing; the display name does.
+    await search.fill(PLUGIN_NAME)
+    await page.locator('article').filter({ has: page.getByRole('switch', { name: PLUGIN_NAME, exact: true }) })
+      .getByRole('button', { name: PLUGIN_NAME, exact: true }).click()
+  }
   await expect(toggle).toBeVisible()
   if ((await toggle.getAttribute('aria-checked')) !== 'true') await toggle.click()
   await expect(toggle).toHaveAttribute('aria-checked', 'true')
@@ -122,9 +162,15 @@ export async function enableDesktopPlugin(page: Page): Promise<void> {
 
 /** Open a session by its sidebar title. */
 export async function openSessionByTitle(page: Page, title: string): Promise<Locator> {
-  const row = page.getByText(title, { exact: false }).first()
+  // The sidebar row is a button named after the title (B's carries the `↳ `
+  // prefix and the badge). A bare getByText would also hit the status card's
+  // title in A's composer, which is not a link.
+  const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // Skip the row's drag handle ("Reorder <title>").
+  const row = page.getByRole('button', { name: new RegExp(`^(?!Reorder ).*${escaped}`) }).filter({ visible: true }).first()
   await expect(row).toBeVisible({ timeout: 30_000 })
   await row.click()
+  await expect(page.getByRole('tab', { selected: true, name: new RegExp(escaped) })).toBeVisible()
   return row
 }
 

@@ -23,6 +23,8 @@ code was changed. Source ids like [S1] point to the Sources section at the end.
   2. the declared hooks are missing (`provides_hooks`);
   3. the security scan rates German research files under `.hermes/research/`
      as `dangerous`.
+     **Done (2026-10-25, Q1):** the archive moved out of the repo to
+     `~/hermes-research/`; Hermes has no scan-exclude mechanism.
   It also warns about two private core imports. Those are a rule 9 risk and
   the most likely reason a reviewer would push back.
 - Smaller gaps: there is no `requires_hermes` floor, no `license` field in
@@ -54,6 +56,7 @@ inside Hermes's core constraints is still unverified:
     ⚠ private core imports (catalog rule 9): spawn_session/commands.py:35
       gateway.session_context.get_session_env; spawn_session/gateway.py:47
       tui_gateway.server.handle_request.
+      (Since v0.22.5 only spawn_session/gateway.py:47 is left; see R15.)
     ◆ Isolation — runs in the plugin host (plugins.isolation: host)
       · dashboard backend API is served through the plugin host (buffered responses)
     Validation failed.
@@ -101,17 +104,17 @@ rules in [S1]/[S2].
 | R2 | `plugin.yaml` plus an entrypoint at the pin | [S1] | MET | `plugin.yaml:1-9`, `__init__.py:32`, `desktop/plugin.js:550`; validator "loadable ✓" |
 | R3 | Manifest `name`, `version`, `description` | [S3 dev-guide] / validator | MET | `plugin.yaml:1-7`; validator "manifest fields ✓" |
 | R4 | Catalog name `[a-z0-9_-]{1,64}`, no name conflict | [S2] Entry schema, Names | MET | `spawn-session`; no `plugin-catalog/spawn-session.yaml` in the upstream listing (checked 2026-10-17 via GitHub contents API) |
-| R5 | `requires_hermes` is a SemVer floor, not newer than the current release (rule 14) | [S2] rule 14 | MET | `plugin.yaml:11` `requires_hermes: ">=0.22.2"` (decision Q4, card t_1edf7ee7); validator "requires_hermes ✓ spec '>=0.22.2' parses". Matches README.md:25-26 "built and tested against v0.22.2" |
+| R5 | `requires_hermes` is a SemVer floor, not newer than the current release (rule 14) | [S2] rule 14 | MET | `plugin.yaml:11` `requires_hermes: ">=0.22.5"` (raised from `>=0.22.2` on 2026-10-25, user decision: the slash commands need the v0.22.5 calling-session keywords); validator "requires_hermes ✓". Matches README.md Requirements |
 | R6 | `version` matches the pinned code, quoted in the entry (rule 14) | [S1][S2] | MET (keep in sync) | `plugin.yaml:2` = `pyproject.toml` version = `dashboard/manifest.json` version = 0.1.0 |
 | R7 | `license` (SPDX) in the manifest, compatible license | [S3] Manifest v2 reference | MET | `plugin.yaml:10` `license: MIT` (decision Q4, card t_1edf7ee7), matching `LICENSE` and README.md:305-307 |
 | R8 | `manifest_version` (optional; absent = v1, supported forever) | [S3] Manifest v2 reference | N/A | v1 manifest is fine; set `manifest_version: 2` only if we adopt v2 fields |
 | R9 | Declared capabilities match registrations (rule 6) | [S2] rule 6 | MET | `plugin.yaml:12-16` declares `provides_tools: [spawn_session, report_back]` and `provides_hooks: [pre_tool_call]`, matching `__init__.py:36-60` (card t_1edf7ee7); validator "declared tools ✓", "declared hooks ✓" |
-| R10 | Install security scan: no `dangerous` (rule 7) | [S2] rule 7 | NOT MET | flagged: `.hermes/research/2026-10-16-model-routing/lane1-hermes-docs.md:101,316`, `.hermes/research/2026-10-16-spawn-with-report/lane2-hermes-native-session-spawning.md:266` (quoted docs and prompts, not code, but the scanner reads the whole tree) |
+| R10 | Install security scan: no `dangerous` (rule 7) | [S2] rule 7 | MET (2026-10-25) | the archive moved to `~/hermes-research/` (Q1); Hermes v0.22.2 and v0.22.5 have no scan-exclude mechanism (no ignore file or manifest field; only VCS/venv/cache dirs are skipped). Previously flagged: `.hermes/research/2026-10-16-model-routing/lane1-hermes-docs.md:101,316`, `.hermes/research/2026-10-16-spawn-with-report/lane2-hermes-native-session-spawning.md:266` (quoted docs and prompts, not code, but the scanner reads the whole tree) |
 | R11 | Desktop half stays inside the SDK (rule 8) | [S2] rule 8; [S10] | MET | validator "desktop surface ✓"; imports only `@hermes/plugin-sdk`, `react`, `react/jsx-runtime` (`desktop/plugin.js:33-55`) |
 | R12 | Desktop: theme variables only, no hardcoded colours | [S10] "Style with theme variables" | MET | a grep for `#hex` / `rgb(` in `desktop/plugin.js` finds no hits |
 | R13 | Desktop: `defaultEnabled: false` for opt-in plugins | [S10] (optional; default `true`) | MET | `desktop/plugin.js` exports `defaultEnabled: false` (decision Q3, user 2026-10-17); the desktop half stays off until enabled in Capabilities → Plugins. The Python half is opt-in via `plugins.enabled` [S3 user-guide]. `scripts/smoke_desktop_plugin.mjs` asserts the flag |
 | R14 | No runtime overrides of core (rule 9) | [S2] rule 9 | MET | validator "no core override ✓" |
-| R15 | Only public surfaces; private core imports are warned (rule 9) | [S2] rule 9; [S1] Before you submit | NOT MET, no public alternative (audited 2026-10-17, card t_d28ed43c) | `spawn_session/commands.py:35` imports `gateway.session_context.get_session_env`; `spawn_session/gateway.py:47` imports `tui_gateway.server.handle_request` (the session RPC door for creating child B). Both stay, guarded; the reasons are in SPEC.md §3.1. Upstream hook request filed as NousResearch/hermes-agent#140199 (2026-10-17, open; see `docs/upstream-hook-request.md`). A warning, not a failure. Precedent plan-mode was listed with a disclosure of "eight groups of internal Hermes seams … each guarded with a documented fallback" [S9] |
+| R15 | Only public surfaces; private core imports are warned (rule 9) | [S2] rule 9; [S1] Before you submit | NOT MET, one import left (audited 2026-10-17, card t_d28ed43c; updated 2026-10-25) | `spawn_session/commands.py` no longer imports `gateway.session_context.get_session_env`: since v0.22.5 (#140997) command handlers get the calling session as keywords. Remaining: `spawn_session/gateway.py:47` imports `tui_gateway.server.handle_request` (the session RPC door for creating child B). It stays, guarded; the reasons are in SPEC.md §3.1. Upstream hook request filed as NousResearch/hermes-agent#140199 (2026-10-17, open; see `docs/upstream-hook-request.md`). A warning, not a failure. The e2e helper with its own private imports lives in `tests/e2e_support/hermes_helper.py` because the lint skips test trees (2026-10-25), so the warning lists only this one runtime import. Precedent plan-mode was listed with a disclosure of "eight groups of internal Hermes seams … each guarded with a documented fallback" [S9] |
 | R16 | Dependency policy: oldest compatible floor plus upper bound (rule 10) | [S2] rule 10; [S3] Dependency security policy | MET | `pyproject.toml` `PyYAML>=6,<7` |
 | R17 | Deps resolve under core constraints (`--install-deps`) (rule 14) | [S1][S2] | UNCLEAR | not run with `--install-deps` here; PyYAML is very likely already a core dependency |
 | R18 | Host modules not declared as deps | [S3] Python dependencies | MET | `pyproject.toml` header comment; `tests/test_dependencies.py` |
@@ -119,10 +122,10 @@ rules in [S1]/[S2].
 | R20 | Approvals and unattended runs respected; no YOLO-inheriting children (rule 12) | [S2] rule 12 | UNCLEAR | own-initiative spawns need user approval (D3; `tools.py:318`) and the tool refuses outside Desktop (D13), so cron/gateway are not reachable. Not verified: whether a spawned child B inherits A's approval mode/YOLO. To check and disclose |
 | R21 | Risky behaviour disclosed in README and PR (rule 13) | [S2] rule 13 | NOT MET | no disclosure section in README.md. Behaviours to disclose: `git` subprocess (`spawn_session/worktree.py:26`, worktree option); writes outside plugin data (`<cwd>/.hermes/handovers`, `spawn_session/handover.py:3`; `$HERMES_HOME/spawn-session/state.json`, `state.py:211`); `inject_message` into the parent (needs `allow_gateway_injection`, `__init__.py:8`); creating new sessions with other models (cost) |
 | R22 | No self-updating code (rule 3) | [S2] rule 3 | MET | no updater or remote loader (manual review; validator found nothing) |
-| R23 | No binaries, `.pyc` or opaque archives (rule 17) | [S2] rule 17 | MET with caveat | `.gitignore` excludes `__pycache__/`. The tree tracks `.hermes/research/.../claude-desktop-spawn-with-report-ui.png` (an image, not executable) |
-| R24 | Not a fork or skin of a bundled or listed plugin (rules 15/16) | [S2] | MET | original design (`.hermes/research/2026-10-16-plugin-existence-search-de.md`); nearest listed relatives `hermes-teammates`, `protean-subagent-viewer` do in-process subagents or a read-only viewer, not visible top-level sessions [S9] |
+| R23 | No binaries, `.pyc` or opaque archives (rule 17) | [S2] rule 17 | MET with caveat | `.gitignore` excludes `__pycache__/`. The tree tracks `docs/images/claude-desktop-spawn-with-report-ui.png` (an image, not executable) |
+| R24 | Not a fork or skin of a bundled or listed plugin (rules 15/16) | [S2] | MET | original design (`~/hermes-research/2026-10-16-plugin-existence-search-de.md`, outside the repo); nearest listed relatives `hermes-teammates`, `protean-subagent-viewer` do in-process subagents or a read-only viewer, not visible top-level sessions [S9] |
 | R25 | Dashboard backend import boundary (GHSA-mcfc-hp25-cjv7) | [S10] "Python side" | MET by design | the advisory page needs login [S11]. Per [S10], `plugin_api.py` is imported only when the plugin is in `plugins.enabled`. Our `dashboard/manifest.json` + `plugin_api.py` follow the documented layout. Validator: "dashboard backend API is served through the plugin host" |
-| R26 | README renders on the catalog page at the pin | [S2] Entry schema (`readme: true`) | MET with caveat | README.md exists and is English, but it links to German `.hermes/research/` (README.md:298-303); fine, but worth labelling |
+| R26 | README renders on the catalog page at the pin | [S2] Entry schema (`readme: true`) | MET with caveat | README.md exists and is English, and the German research archive is no longer in the tree (it moved to `~/hermes-research/`) |
 | R27 | Screenshots for anything with a UI | [S1] Opening the PR | NOT MET | no screenshots in the repo; `image`/`screenshots` must be `raw.githubusercontent.com` URLs pinned to the SHA [S2] |
 | R28 | Tests / CI | not a catalog rule; [S3] recommends own CI with `uv --exclude-newer` | UNCLEAR (recommended) | `tests/` is pytest (202 pass); there is no `.github/workflows/` |
 | R29 | Versioning / tags / releases | [S2] rule 2: only the SHA counts; tags rejected as pins | MET (tags optional) | no git tags; precedent kanban-graph tagged `v0.2.1` alongside the SHA [S7] |
@@ -149,7 +152,9 @@ Not implemented on this card. Each item is one suggested follow-up card.
   `subdir` at a plugin-only directory, or (c) ask upstream whether
   documentation files are exempt. This touches the source-of-truth rules in
   AGENTS.md (`.hermes/research/` is read-only), so it needs a user decision
-  (Q1).
+  (Q1). **Done (2026-10-25):** moved unchanged to `~/hermes-research/` (option
+  a). A `docs/` path does not help: agent-facing shapes (prompt injection,
+  agent-config edits, Markdown exfil) keep full severity in documentation.
 - **G3 (high, rule 9): private core imports.** `gateway.session_context` and
   `tui_gateway.server.handle_request`. Audited 2026-10-17 (card t_d28ed43c)
   against the plugin guide, the Desktop SDK guide, the plugins user guide,
@@ -160,6 +165,9 @@ Not implemented on this card. Each item is one suggested follow-up card.
   The per-call reasons are in SPEC.md §3.1. The upstream issue was filed
   as NousResearch/hermes-agent#140199 (2026-10-17, open; Q2). Until
   a hook exists, disclose both seams in the README (G5) like plan-mode did.
+  Update 2026-10-25: `gateway.session_context` is gone (Hermes v0.22.5
+  command-handler keywords, `requires_hermes: ">=0.22.5"`); only
+  `tui_gateway.server.handle_request` remains.
 - **G4: add `requires_hermes: ">=0.22.2"`** (or the oldest release actually
   tested) to `plugin.yaml` and the entry. Add `license: MIT`, plus optionally
   `manifest_version: 2` and `tags`. **Done in `plugin.yaml` (card t_1edf7ee7):**
@@ -195,6 +203,7 @@ G11 → G12 → user submits.
 
 - Q1: How should the `.hermes/research/` scanner failures be handled: move the
   research out of the plugin tree, use a `subdir` layout, or ask upstream?
+  **Answered (user, 2026-10-25):** move it out of the repo to `~/hermes-research/`.
 - Q2: Should we open an upstream issue asking for a public seam for session
   creation and session-key lookup (rule 9), or list with a disclosure as
   plan-mode did? Issue filed as

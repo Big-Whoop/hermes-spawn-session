@@ -6,7 +6,7 @@ effort. B gets a task and context, works on its own, and then **reports back
 into A**. The report arrives in A as a message, and A runs a turn on it.
 
 The idea comes from the "nested sessions" feature in Claude Desktop (screenshot:
-[`.hermes/research/2026-10-16-spawn-with-report/claude-desktop-spawn-with-report-ui.png`](.hermes/research/2026-10-16-spawn-with-report/claude-desktop-spawn-with-report-ui.png)).
+[`docs/images/claude-desktop-spawn-with-report-ui.png`](docs/images/claude-desktop-spawn-with-report-ui.png)).
 One reason to use it: send a routine task to a cheaper model, or a hard task to
 a stronger one, without switching the model of your current chat. Switching
 throws away the prompt cache.
@@ -22,8 +22,9 @@ A (your chat) ──spawn──▶ B "↳ Fix flaky test"  (own model/effort, sa
 - **Hermes Desktop.** The plugin only works in Desktop sessions (decision
   D13). In CLI, TUI-only or messaging sessions, the tool refuses and suggests
   something else.
-- **Hermes v0.22.2.** This is the version the plugin was built and tested
-  against.
+- **Hermes v0.22.5 or newer.** The slash commands read the calling session
+  from the command-handler context keywords added in v0.22.5. The plugin was
+  built against v0.22.2 and is tested against v0.22.5.
 - **Python dependencies.** These are declared in `pyproject.toml`: currently
   only `PyYAML>=6,<7`. Hermes provides `fastapi` (used by the dashboard
   backend) and its own modules, so they are not declared.
@@ -314,11 +315,11 @@ It runs seven stages in order and exits non-zero if any of them fails:
    ignored there. deptry is installed into a throwaway venv under `$TMPDIR`.
 4. `hermes plugins doctor --ci`, run against a temporary `HERMES_HOME` with
    the repo linked in as the plugin (the same HOME stage 6 uses).
-5. `hermes plugins validate --json`. The script evaluates each check. Two
-   known, deferred findings are allowlisted in the script: the security scan
-   of `.hermes/research/`, and the rule 9 private-import warning (see
-   [docs/catalog-contribution.md](docs/catalog-contribution.md)). Every other
-   check must pass.
+5. `hermes plugins validate --json`. The script evaluates each check. One
+   known, deferred finding is allowlisted in the script: the rule 9
+   private-import warning (see
+   [docs/catalog-contribution.md](docs/catalog-contribution.md)). Every check
+   must pass.
 6. An isolated `hermes serve --port 0` under that temporary `HERMES_HOME`,
    with the plugin linked and enabled. The stage asserts that the logs contain no
    `Failed to load plugin spawn-session` line and that
@@ -335,7 +336,7 @@ The gate checks the repo state only. It never touches the live install in
 `/opt/data` and never uses `--install-deps`. It also
 never runs `hermes serve --stop`, because that would stop every server. The
 full gate on the cluster (Option A in
-`.hermes/research/2026-10-17-plugin-e2e-staging/REPORT.md`) is not part of
+`~/hermes-research/2026-10-17-plugin-e2e-staging/REPORT.md`) is not part of
 this script.
 
 To check the live install after a restart, run the read-only
@@ -363,6 +364,31 @@ Setup and checks:
 
     cd e2e && npm ci && npm run typecheck && npm run list
 
+Local run on a workstation (no root, no xvfb, no `/opt/hermes`):
+`scripts/e2e_local.sh setup` installs Node, uv, a hermes-agent checkout at
+`$HERMES_REF` (default `v0.22.5`; switching the ref re-checks out an existing
+`~/dev/hermes-agent`) with a venv plus this plugin's dependencies, and the
+Desktop build, all under `$HOME`. Then `scripts/e2e_local.sh backend|desktop|all`
+runs the specs. Electron runs with `--headless=new` (`E2E_HEADED=1` shows the
+window). Electron 44 (v0.22.5) crashes under `--ozone-platform=headless`. Screenshots go to `/tmp/spawn-session-e2e-artifacts/screenshots`.
+
+Desktop harness notes (verified on v0.22.2 and v0.22.5):
+
+- v0.22.5 turned Capabilities -> Plugins into a catalog. A git/symlink install
+  has no discover section, so the harness searches for the display name ("Spawn
+  session"; the key `spawn-session` finds nothing) and opens the card. The
+  detail pane keeps the `Desktop: Spawn session` switch.
+- Electron loads desktop halves from its own `HERMES_HOME`, even in remote
+  mode. `launchDesktop` therefore links the repo into the Desktop sandbox's
+  `plugins/` as well. Without that link the Plugins tab shows "unavailable
+  (remote backend)".
+- The app follows the system locale. The harness forces `en-US`, because the
+  specs match English labels.
+- Inactive tabs keep their composer mounted (hidden), so plugin UI in
+  `composer.top` can exist twice in the DOM. The specs match visible elements only.
+- Palette rows are picked with ArrowDown + Enter. `click()` never passes
+  Playwright's stability check there.
+
 Local run (the sandbox HERMES_HOME, free port and session token are created
 and removed automatically; set `E2E_KEEP=1` to keep them):
 
@@ -385,7 +411,8 @@ screenshots) go to `E2E_ARTIFACTS_DIR` (default `e2e/test-results`).
 
 - Specification: [SPEC.md](SPEC.md)
 - Design decisions D1–D13: [.hermes/decisions.md](.hermes/decisions.md)
-- Research archive (German): [.hermes/research/](.hermes/research/)
+- Research archive (German): `~/hermes-research/`, kept outside the repo so the
+  install security scan does not flag the quoted prompts in it
 - Contributing / coding agents: [AGENTS.md](AGENTS.md)
 
 ## License

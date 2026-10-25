@@ -1,7 +1,7 @@
 # hermes-spawn-session — Specification
 
 Status: v1 spec (card t_225e6046), 2026-10-16.
-Source of truth: `.hermes/decisions.md` (D1–D13). Research: `.hermes/research/`.
+Source of truth: `.hermes/decisions.md` (D1–D13). Research: `~/hermes-research/` (outside the repo since 2026-10-25).
 Doc verification: official Hermes docs fetched 2026-10-16 (URLs cited inline as [Dn]
 where "Dn" below refers to the doc list in §11, not to decisions; decisions are
 written as **D1–D13**).
@@ -168,18 +168,23 @@ hermes-spawn-session/                 (installed as ~/.hermes/plugins/spawn-sess
 
 ### 3.1 Private Hermes seams (catalog rule 9)
 
-`hermes plugins validate` warns about two imports. Both were audited on
-2026-10-17 (card t_d28ed43c). Neither has a documented public replacement, so
-both stay behind their guarded fallbacks. The upstream hook request was filed as
+`hermes plugins validate` warned about two imports. Both were audited on
+2026-10-17 (card t_d28ed43c), and the upstream hook request was filed as
 NousResearch/hermes-agent#140199 (open; see `docs/upstream-hook-request.md`).
+Part 1 (calling session in slash commands) was resolved upstream in Hermes
+v0.22.5 (#140997): command handlers that declare `session_id`, `session_key`,
+`platform` or `source` receive them as keywords (developer guide, "Register
+slash commands → Calling-session context"). The plugin uses that and requires
+`>=0.22.5`, so `gateway.session_context.get_session_env` is no longer imported.
+One private import remains:
 
 | Call | Why it's needed | Public candidates checked | Why they don't fit | Fallback |
 | --- | --- | --- | --- | --- |
-| `gateway.session_context.get_session_env` (`spawn_session/commands.py:35`) | Slash-command handlers (`/report`, `/abandon`, `/detach`, `/spawn-cleanup`) must know which session invoked them | Injected `session_id` kwarg [S3]; `ctx.profile_name`; `ctx.dispatch_tool` | `register_command` handlers receive only `raw_args` (no context kwargs); `profile_name` is not a session; `dispatch_tool` forwards kwargs into the tool but cannot read the caller's session | `os.environ` `HERMES_SESSION_KEY` / `HERMES_SESSION_ID`; empty means a clean "cannot determine the current session" error |
 | `tui_gateway.server.handle_request` (`spawn_session/gateway.py:47`): `session.create`, `prompt.submit`, `session.title`, `session.archive` | Create the visible child B with title/cwd/model/provider/parent/seed (D1, D2, D7, D11) | `ctx.dispatch_tool`; Desktop SDK `host.request` [S1]; API server `POST /api/sessions` | No tool creates sessions; `host.request` exists only in the renderer, but the agent-initiated `spawn_session` tool runs in Python with no desktop round-trip; `POST /api/sessions` needs a separately enabled, keyed API server and only inserts a row (no cwd, no live runtime session, no seed turn) | `GatewayUnavailable`, so the tool returns a JSON error (D13: Desktop/TUI host only) |
 
-Tool handlers already use the public `session_id` kwarg (`tools.py:275`,
-`:599`, `:629`).
+Tool handlers use the public `session_id` kwarg (`tools.py:275`, `:599`,
+`:629`); slash-command handlers use the public `session_key`/`session_id`
+command keywords (`commands.py`, `_guard`).
 
 ## 4. Tool schemas
 
@@ -251,9 +256,11 @@ reports allowed; B stays open).
 - `/spawn-cleanup <handover_id> yes|no` — the user's answer to the D11
   "remove worktree + branch?" question after an abort (never automatic).
 
-Implementation notes (card 4): plugin slash commands receive only the raw
-argument string; the calling session is read from the gateway-bound session
-context (`HERMES_SESSION_KEY`). `/report` injects the request into B itself via
+Implementation notes (card 4): the calling session comes from the
+command-handler context keywords (Hermes >= v0.22.5): `session_key` (in the
+Desktop/TUI gateway the durable session id, the former `HERMES_SESSION_KEY`),
+else `session_id`; neither means a clean "cannot determine the current
+session" error. `/report` injects the request into B itself via
 `inject_message`. Undeliverable abort/detach notices are kept in the handover
 frontmatter (`pending_notices`) and retried with the reports by the backend
 action `deliver_pending(parent)` (the desktop "open reports" banner, card 6).
@@ -332,11 +339,25 @@ proposed ──confirm──▶ running ──report──▶ reported ──inj
   **‹A title›**" (link → `host.openSession(A)`), collapsible Task and Context.
 - A: status card per child (running / reported / delivered / abandoned /
   detached) with buttons Open, Abort, Detach; `proposed` card with title, task,
-  context, model selector, Start / Decline.
+  context, model selector, Start / Decline. Status cards and proposal cards
+  render only in A, never in B: B's `parent_session_id` is the spawn link to A,
+  so matching a parent by lineage stops at a spawned child (B or a compression
+  continuation of B never counts as A).
 - Sidebar: `↳` title prefix and leading badge (Q3). Ordering after A is NOT
   applied (card t_1f857d7f): `host.sessions.reorder()` replaces the whole manual
   Recents order and the SDK cannot read it, so reordering would clobber the
   user's own order.
+- Retitle latency: the backend sets `↳ Detached: <title>` at once, but the SDK
+  has no documented way to refresh the session list after a rename (no
+  `host.sessions.refresh`, no `ctx.runAction` id for it; the `session.title`
+  RPC only emits `session.info`; Desktop only patches row titles on a
+  `session.title` event, which only the core auto-titler emits). The sidebar
+  picks the title up on its next `sessions.changed` pass, which Desktop
+  coalesces to one list refresh per 10 s, so it normally shows after ~10 s.
+  Sometimes that pass still returns the list from before the rename (the
+  sidebar list endpoint caches responses for 5 s), and the row keeps the old
+  title until some later session activity triggers another pass. This is an
+  upstream gap; the plugin cannot work around it through documented APIs.
 - Reopen of A with `reported` children: banner "N open report(s)" → Deliver.
 
 ## 8. Config keys (`plugins.entries.spawn-session.*`)

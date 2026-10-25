@@ -25,7 +25,9 @@ the details.
 
 1. `.hermes/decisions.md` (D1–D13). Change it only after the user confirms.
 2. `SPEC.md`. Update it when behaviour changes.
-3. `.hermes/research/`. German and read-only.
+3. The research archive in `~/hermes-research/`. German and read-only. It
+   lives outside the repo because `hermes plugins validate`'s security scan
+   rates quoted prompts in it as `dangerous` and blocks installs.
 
 If the code and SPEC disagree, report it. Don't silently pick one.
 
@@ -43,6 +45,7 @@ If the code and SPEC disagree, report it. Don't silently pick one.
 - `node scripts/smoke_desktop_plugin.mjs`.
 - `scripts/fast_gate.sh`: the one-command gate (pytest, smoke, deptry, `hermes plugins doctor`/`validate`, isolated `serve --port 0`, Playwright `--project=backend` in a sandbox; the desktop project is excluded here). It checks the repo state only, in a temp HERMES_HOME; it never touches /opt/data. Run it before every PR.
 - `scripts/live_health.sh`: checks the LIVE install after a restart (plugin loaded, no `Failed to load plugin` in errors.log). Not part of the gate.
+- `scripts/e2e_local.sh setup`, then `scripts/e2e_local.sh all`: full e2e (backend + Hermes Desktop via Playwright `_electron`, headless) on a workstation without root or /opt/hermes. Check the catalog screenshots in `/tmp/spawn-session-e2e-artifacts/screenshots` for desktop changes.
 - Manual checks in a live Desktop go on the e2e card t_787f6427.
 
 ## Rules
