@@ -363,6 +363,31 @@ Setup and checks:
 
     cd e2e && npm ci && npm run typecheck && npm run list
 
+Local run on a workstation (no root, no xvfb, no `/opt/hermes`):
+`scripts/e2e_local.sh setup` installs Node, uv, a hermes-agent checkout at
+`$HERMES_REF` (default `v0.22.5`; switching the ref re-checks out an existing
+`~/dev/hermes-agent`) with a venv plus this plugin's dependencies, and the
+Desktop build, all under `$HOME`. Then `scripts/e2e_local.sh backend|desktop|all`
+runs the specs. Electron runs with `--headless=new` (`E2E_HEADED=1` shows the
+window). Electron 44 (v0.22.5) crashes under `--ozone-platform=headless`. Screenshots go to `/tmp/spawn-session-e2e-artifacts/screenshots`.
+
+Desktop harness notes (verified on v0.22.2 and v0.22.5):
+
+- v0.22.5 turned Capabilities -> Plugins into a catalog. A git/symlink install
+  has no discover section, so the harness searches for the display name ("Spawn
+  session"; the key `spawn-session` finds nothing) and opens the card. The
+  detail pane keeps the `Desktop: Spawn session` switch.
+- Electron loads desktop halves from its own `HERMES_HOME`, even in remote
+  mode. `launchDesktop` therefore links the repo into the Desktop sandbox's
+  `plugins/` as well. Without that link the Plugins tab shows "unavailable
+  (remote backend)".
+- The app follows the system locale. The harness forces `en-US`, because the
+  specs match English labels.
+- Inactive tabs keep their composer mounted (hidden), so plugin UI in
+  `composer.top` can exist twice in the DOM. The specs match visible elements only.
+- Palette rows are picked with ArrowDown + Enter. `click()` never passes
+  Playwright's stability check there.
+
 Local run (the sandbox HERMES_HOME, free port and session token are created
 and removed automatically; set `E2E_KEEP=1` to keep them):
 

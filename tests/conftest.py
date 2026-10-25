@@ -73,7 +73,10 @@ def fake_gateway(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeGateway]:
         def start(self) -> None:
             self.kwargs["target"](*self.kwargs.get("args", ()), **self.kwargs.get("kwargs", {}))
 
-    monkeypatch.setattr(tools.threading, "Thread", InlineThread)
+    # Scoped to tools: patching threading.Thread globally would also run any
+    # thread started by an imported Hermes module inline (tui_gateway.server's
+    # idle reaper loops forever), so pytest hangs when Hermes is importable.
+    monkeypatch.setattr(tools, "threading", types.SimpleNamespace(Thread=InlineThread))
     yield gw
     gateway.set_handle_request_override(None)
 

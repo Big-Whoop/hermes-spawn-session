@@ -8,9 +8,10 @@
 // refusal in B, theme switch without hardcoded colours, catalog screenshots.
 //
 // Skipped unless HERMES_DESKTOP_ROOT points at a built `apps/desktop`. The
-// selectors for host UI (palette, Capabilities -> Plugins, theme) are
-// unverified against v0.22.2 until the first Job run; plugin UI is matched by
-// its own `data-spawn-session-*` attributes (see the header of desktop/plugin.js).
+// selectors for host UI (palette, Capabilities -> Plugins, colour mode, sidebar
+// grouping) were verified against v0.22.2 and v0.22.5 (scripts/e2e_local.sh); plugin UI is
+// matched by its own `data-spawn-session-*` attributes (see the header of
+// desktop/plugin.js).
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
@@ -41,8 +42,17 @@ function freshParent(prefix: string, cwd?: string): { id: string; title: string 
   return { id: res.stored_session_id, title }
 }
 
-/** The header in B renders only for the focused session: proof that B is the focused tab. */
-const childHeader = (page: Page, handoverId: string) => page.locator(`[data-spawn-session-header="${handoverId}"]`)
+/**
+ * Plugin UI in composer.top: inactive tabs keep their composer mounted (hidden),
+ * and the slots render for the focused session, so a selector can match a hidden
+ * copy too. Assert on the visible one only.
+ */
+const ui = (page: Page, selector: string) => page.locator(selector).filter({ visible: true })
+
+/**
+ * The header in B renders only for the focused session: proof that B is the focused tab.
+ */
+const childHeader = (page: Page, handoverId: string) => ui(page, `[data-spawn-session-header="${handoverId}"]`)
 
 /** Poll a REST child view of A until `pred` holds. */
 async function pollChild(a: string, handoverId: string, pred: (c: any) => boolean): Promise<any> {
@@ -81,7 +91,7 @@ test('AT5.1: ⌘K spawn dialog starts a child B and focuses its tab', async () =
   const { page } = desk
   await openSessionByTitle(page, parentTitle)
   await runPaletteCommand(page, 'Spawn session with report')
-  const dialog = page.locator('[data-spawn-session-dialog="new"]')
+  const dialog = ui(page, '[data-spawn-session-dialog="new"]')
   await expect(dialog).toBeVisible()
   const title = uniqueTitle('E2E dialog child')
   await dialog.locator('[data-spawn-session-field="title"]').fill(title)
@@ -100,7 +110,7 @@ test('AT5.1: ⌘K spawn dialog starts a child B and focuses its tab', async () =
 test('status card in A, ↳ sidebar badge', async () => {
   const { page } = desk
   await openSessionByTitle(page, parentTitle)
-  const card = page.locator('[data-spawn-session-status]').first()
+  const card = ui(page, '[data-spawn-session-status]').first()
   await expect(card).toBeVisible()
   await expect(card.getByRole('button', { name: 'Abort' })).toBeVisible()
   await expect(card.getByRole('button', { name: 'Detach' })).toBeVisible()
@@ -113,7 +123,7 @@ test('child header in B and nested-spawn refusal', async () => {
   const children = await api.get(`/children?session_id=${parentId}`)
   const b = children.body.children[0]
   await openSessionByTitle(page, b.title)
-  const header = page.locator(`[data-spawn-session-header="${b.handover_id}"]`)
+  const header = childHeader(page, b.handover_id)
   await expect(header).toBeVisible()
   await expect(header).toContainText(parentTitle)
   await header.locator('[data-spawn-session-action="toggle-task"]').click()
@@ -135,7 +145,7 @@ test('AT5.4: the parent link in B\'s header focuses A', async () => {
   await header.locator('[data-spawn-session-action="open-parent"]').click()
   // A is focused: B's header is gone and A's status card for B is shown.
   await expect(header).toBeHidden()
-  await expect(page.locator(`[data-spawn-session-status="${b.handover_id}"]`)).toBeVisible({ timeout: 30_000 })
+  await expect(ui(page, `[data-spawn-session-status="${b.handover_id}"]`)).toBeVisible({ timeout: 30_000 })
 })
 
 test('AT5.5: ⌘K spawn is blocked while a child is focused', async () => {
@@ -151,7 +161,7 @@ test('AT5.5: ⌘K spawn is blocked while a child is focused', async () => {
   await runPaletteCommand(page, 'Spawn session with report')
   await expect(page.getByText(/cannot spawn further sessions \(one level only\)/)).toBeVisible()
   // No dialog opens, so nothing can be started from B.
-  await expect(page.locator('[data-spawn-session-dialog]')).toHaveCount(0)
+  await expect(ui(page, '[data-spawn-session-dialog]')).toHaveCount(0)
   expect((await api.get(`/children?session_id=${parentId}`)).body.children.length).toBe(before)
 })
 
@@ -159,14 +169,14 @@ test('proposal card: Dismiss, Edit, Start', async () => {
   const { page } = desk
   await openSessionByTitle(page, parentTitle)
   const p1 = hermesHelper(state, ['propose', '--session-id', parentId, '--title', uniqueTitle('E2E proposal dismiss'), '--task', 'x', '--model', MOCK_MODEL_REF])
-  const card1 = page.locator(`[data-spawn-session-card="${p1.handover_id}"]`)
+  const card1 = ui(page, `[data-spawn-session-card="${p1.handover_id}"]`)
   await expect(card1).toBeVisible({ timeout: 30_000 })
   await catalogShot(page, '04-proposal-card')
   await card1.getByRole('button', { name: 'Dismiss' }).click()
   await expect(card1).toBeHidden()
 
   const p2 = hermesHelper(state, ['propose', '--session-id', parentId, '--title', uniqueTitle('E2E proposal edit'), '--task', 'x', '--model', MOCK_MODEL_REF])
-  const card2 = page.locator(`[data-spawn-session-card="${p2.handover_id}"]`)
+  const card2 = ui(page, `[data-spawn-session-card="${p2.handover_id}"]`)
   await expect(card2).toBeVisible({ timeout: 30_000 })
   await card2.getByRole('button', { name: 'Edit' }).click()
   const edited = uniqueTitle('E2E proposal edited')
@@ -175,7 +185,7 @@ test('proposal card: Dismiss, Edit, Start', async () => {
   await expect(page.getByText(`Spawned “${edited}”`)).toBeVisible()
 
   const p3 = hermesHelper(state, ['propose', '--session-id', parentId, '--title', uniqueTitle('E2E proposal start'), '--task', 'x', '--model', MOCK_MODEL_REF])
-  const card3 = page.locator(`[data-spawn-session-card="${p3.handover_id}"]`)
+  const card3 = ui(page, `[data-spawn-session-card="${p3.handover_id}"]`)
   await expect(card3).toBeVisible({ timeout: 30_000 })
   await card3.getByRole('button', { name: 'Start' }).click()
   await expect(card3).toBeHidden()
@@ -187,7 +197,7 @@ test('report: open-report notice in A and Deliver', async () => {
   hermesHelper(state, ['report', '--session-id', b.child_session_id, '--result', 'E2E report body'])
   await openSessionByTitle(page, parentTitle)
   // Either delivered straight away (A live -> A turn) or shown as an open report.
-  const notice = page.locator('[data-spawn-session-open-reports]')
+  const notice = ui(page, '[data-spawn-session-open-reports]')
   const delivered = page.getByText(/spawn-session report/).first()
   await expect(notice.or(delivered)).toBeVisible({ timeout: 30_000 })
   await catalogShot(page, '05-report')
@@ -203,11 +213,11 @@ test('Abort and Detach from the status card', async () => {
   const de = (await api.post('/spawn', { session_id: parentId, title: uniqueTitle('E2E detach'), task: 'x', model: MOCK_MODEL_REF })).body
   await openSessionByTitle(page, parentTitle)
 
-  const abortCard = page.locator(`[data-spawn-session-status="${ab.handover_id}"]`)
+  const abortCard = ui(page, `[data-spawn-session-status="${ab.handover_id}"]`)
   await abortCard.getByRole('button', { name: 'Abort' }).click()
   await expect(abortCard).toBeHidden({ timeout: 30_000 })
 
-  const detachCard = page.locator(`[data-spawn-session-status="${de.handover_id}"]`)
+  const detachCard = ui(page, `[data-spawn-session-status="${de.handover_id}"]`)
   await detachCard.getByRole('button', { name: 'Detach' }).click()
   await expect(detachCard).toContainText('Detach is irreversible')
   await catalogShot(page, '06-detach-confirm')
@@ -221,19 +231,20 @@ test('theme switch: plugin UI follows theme variables (no hardcoded colours)', a
   const { page } = desk
   await api.post('/spawn', { session_id: parentId, title: uniqueTitle('E2E theme'), task: 'x', model: MOCK_MODEL_REF })
   await openSessionByTitle(page, parentTitle)
-  const card = page.locator('[data-spawn-session-status]').first()
+  const card = ui(page, '[data-spawn-session-status]').first()
   await expect(card).toBeVisible()
 
   // Inline styles in plugin elements must not carry literal colours.
-  const inline = await page.locator('[data-spawn-session-status], [data-spawn-session-card], [data-spawn-session-header], [data-spawn-session-row]')
+  const inline = await ui(page, '[data-spawn-session-status], [data-spawn-session-card], [data-spawn-session-header], [data-spawn-session-row]')
     .evaluateAll(els => els.flatMap(e => [e, ...Array.from(e.querySelectorAll('*'))]).map(e => e.getAttribute('style') || '').join(';'))
   expect(inline).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i)
 
   const colours = () => card.evaluate(el => { const s = getComputedStyle(el); return `${s.color}|${s.borderColor}|${s.backgroundColor}` })
   const before = await colours()
   await catalogShot(page, '07-theme-a')
-  // Host theme toggle: palette command (label unverified on v0.22.2).
-  await runPaletteCommand(page, 'Toggle theme')
+  // Host colour mode (v0.22.2): palette "Change color mode…" -> Light/Dark.
+  const dark = await page.evaluate(() => document.documentElement.classList.contains('dark'))
+  await runPaletteCommand(page, 'Change color mode…', dark ? 'Light' : 'Dark')
   await expect.poll(colours).not.toBe(before)
   await catalogShot(page, '08-theme-b')
 })
@@ -247,7 +258,7 @@ test('AT2.3: cost-limited proposal card shows the note and Start works', async (
   expect(p.ok, JSON.stringify(p)).toBe(true)
   expect(p.confirmation_required.join(' ')).toContain('more expensive')
 
-  const card = page.locator(`[data-spawn-session-card="${p.handover_id}"]`)
+  const card = ui(page, `[data-spawn-session-card="${p.handover_id}"]`)
   await expect(card).toBeVisible({ timeout: 30_000 })
   await expect(card.locator('[data-spawn-session-model]')).toHaveText(PRICEY_MODEL_REF)
   await expect(card.locator('[data-spawn-session-reasons]')).toContainText(`model ${PRICEY_MODEL_REF} is more expensive than the parent's ${CHEAP_MODEL_REF}`)
@@ -273,15 +284,15 @@ test('AT3.2: limit-reached proposal card after three running agent children', as
   expect(fourth.confirmation_required.join(' ')).toContain('limit reached')
 
   await openSessionByTitle(page, a.title)
-  const card = page.locator(`[data-spawn-session-card="${fourth.handover_id}"]`)
+  const card = ui(page, `[data-spawn-session-card="${fourth.handover_id}"]`)
   await expect(card).toBeVisible({ timeout: 30_000 })
   await expect(card.locator('[data-spawn-session-reasons]')).toContainText('limit reached')
-  await expect(page.locator('[data-spawn-session-status]')).toHaveCount(3)
+  await expect(ui(page, '[data-spawn-session-status]')).toHaveCount(3)
   await catalogShot(page, '10-limit-proposal')
 
   // User spawns are not capped: ⌘K still starts a fifth child.
   await runPaletteCommand(page, 'Spawn session with report')
-  const dialog = page.locator('[data-spawn-session-dialog="new"]')
+  const dialog = ui(page, '[data-spawn-session-dialog="new"]')
   const title = uniqueTitle('E2E cap user')
   await dialog.locator('[data-spawn-session-field="title"]').fill(title)
   await dialog.locator('[data-spawn-session-field="task"]').fill('x')
@@ -316,10 +327,18 @@ test('AT2.4: Group by Projects lists B under A\'s project', async () => {
   const b = (await api.post('/spawn', { session_id: a.id, title: childTitle, task: 'x', model: MOCK_MODEL_REF })).body
   expect(b.project, JSON.stringify(b)).toBeTruthy()
 
-  // Host UI (selector unverified on v0.22.2): sidebar "Group by" -> "Projects".
-  await page.getByRole('button', { name: /group by/i }).first().click()
-  await page.getByRole('menuitemradio', { name: /projects/i }).or(page.getByRole('menuitem', { name: /projects/i })).first().click()
-  const group = page.locator('[role="group"], section, li').filter({ hasText: projectName }).first()
+  // Host UI (v0.22.2): sidebar "Filters" menu -> "Grouping" submenu -> "Project".
+  await page.getByRole('button', { name: 'Filters', exact: true }).first().click()
+  await page.getByRole('menuitem', { name: /^Grouping/ }).click()
+  await page.getByRole('menuitemradio', { name: 'Project', exact: true }).click()
+  await page.keyboard.press('Escape')
+  // The sidebar has no group role: take the innermost element that holds the
+  // project header ("Open <project>") and B's row (ancestors come first in
+  // document order, so the innermost one is last).
+  const group = page.locator('div')
+    .filter({ has: page.getByRole('button', { name: `Open ${projectName}` }) })
+    .filter({ hasText: childTitle })
+    .last()
   await expect(group).toBeVisible({ timeout: 30_000 })
   await expect(group.getByText(childTitle, { exact: false }).first()).toBeVisible()
   await expect(group.locator(`[data-spawn-session-row="${b.handover_id}"]`)).toHaveText(/↳/)
@@ -339,10 +358,10 @@ test('AT6.2 / AT4.4: closed A shows N open report(s) and Deliver delivers', asyn
 
   // Reopen A in the Desktop -> banner -> Deliver.
   await openSessionByTitle(page, a.title)
-  const notice = page.locator('[data-spawn-session-open-reports]')
+  const notice = ui(page, '[data-spawn-session-open-reports]')
   await expect(notice).toBeVisible({ timeout: 30_000 })
   await expect(notice.locator('[data-spawn-session-open-reports-text]')).toHaveText(/^\d+ open reports?$/)
-  await expect(page.locator(`[data-spawn-session-status="${b.handover_id}"] [data-spawn-session-status-text]`)).toHaveText('reported')
+  await expect(ui(page, `[data-spawn-session-status="${b.handover_id}"] [data-spawn-session-status-text]`)).toHaveText('reported')
   await catalogShot(page, '12-open-reports-banner')
   await notice.locator('[data-spawn-session-action="deliver"]').click()
   await expect(page.getByText(/Delivered \d+ items? to this session/)).toBeVisible()
@@ -357,7 +376,7 @@ test('AT7.3: Detached: title, Detached marker and report_back refusal', async ()
   const title = uniqueTitle('E2E detach me')
   const b = (await api.post('/spawn', { session_id: a.id, title, task: 'x', model: MOCK_MODEL_REF })).body
   await openSessionByTitle(page, a.title)
-  const card = page.locator(`[data-spawn-session-status="${b.handover_id}"]`)
+  const card = ui(page, `[data-spawn-session-status="${b.handover_id}"]`)
   await card.locator('[data-spawn-session-action="detach"]').click()
   await expect(card.locator('[data-spawn-session-detach-warning]')).toBeVisible()
   await card.locator('[data-spawn-session-action="detach-confirm"]').click()
