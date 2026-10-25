@@ -6,7 +6,7 @@ effort. B gets a task and context, works on its own, and then **reports back
 into A**. The report arrives in A as a message, and A runs a turn on it.
 
 The idea comes from the "nested sessions" feature in Claude Desktop (screenshot:
-[`.hermes/research/2026-10-16-spawn-with-report/claude-desktop-spawn-with-report-ui.png`](.hermes/research/2026-10-16-spawn-with-report/claude-desktop-spawn-with-report-ui.png)).
+[`docs/images/claude-desktop-spawn-with-report-ui.png`](docs/images/claude-desktop-spawn-with-report-ui.png)).
 One reason to use it: send a routine task to a cheaper model, or a hard task to
 a stronger one, without switching the model of your current chat. Switching
 throws away the prompt cache.
@@ -315,11 +315,11 @@ It runs seven stages in order and exits non-zero if any of them fails:
    ignored there. deptry is installed into a throwaway venv under `$TMPDIR`.
 4. `hermes plugins doctor --ci`, run against a temporary `HERMES_HOME` with
    the repo linked in as the plugin (the same HOME stage 6 uses).
-5. `hermes plugins validate --json`. The script evaluates each check. Two
-   known, deferred findings are allowlisted in the script: the security scan
-   of `.hermes/research/`, and the rule 9 private-import warning (see
-   [docs/catalog-contribution.md](docs/catalog-contribution.md)). Every other
-   check must pass.
+5. `hermes plugins validate --json`. The script evaluates each check. One
+   known, deferred finding is allowlisted in the script: the rule 9
+   private-import warning (see
+   [docs/catalog-contribution.md](docs/catalog-contribution.md)). Every check
+   must pass.
 6. An isolated `hermes serve --port 0` under that temporary `HERMES_HOME`,
    with the plugin linked and enabled. The stage asserts that the logs contain no
    `Failed to load plugin spawn-session` line and that
@@ -336,7 +336,7 @@ The gate checks the repo state only. It never touches the live install in
 `/opt/data` and never uses `--install-deps`. It also
 never runs `hermes serve --stop`, because that would stop every server. The
 full gate on the cluster (Option A in
-`.hermes/research/2026-10-17-plugin-e2e-staging/REPORT.md`) is not part of
+`~/hermes-research/2026-10-17-plugin-e2e-staging/REPORT.md`) is not part of
 this script.
 
 To check the live install after a restart, run the read-only
@@ -411,7 +411,8 @@ screenshots) go to `E2E_ARTIFACTS_DIR` (default `e2e/test-results`).
 
 - Specification: [SPEC.md](SPEC.md)
 - Design decisions D1–D13: [.hermes/decisions.md](.hermes/decisions.md)
-- Research archive (German): [.hermes/research/](.hermes/research/)
+- Research archive (German): `~/hermes-research/`, kept outside the repo so the
+  install security scan does not flag the quoted prompts in it
 - Contributing / coding agents: [AGENTS.md](AGENTS.md)
 
 ## License

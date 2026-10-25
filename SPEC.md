@@ -1,7 +1,7 @@
 # hermes-spawn-session — Specification
 
 Status: v1 spec (card t_225e6046), 2026-10-16.
-Source of truth: `.hermes/decisions.md` (D1–D13). Research: `.hermes/research/`.
+Source of truth: `.hermes/decisions.md` (D1–D13). Research: `~/hermes-research/` (outside the repo since 2026-10-25).
 Doc verification: official Hermes docs fetched 2026-10-16 (URLs cited inline as [Dn]
 where "Dn" below refers to the doc list in §11, not to decisions; decisions are
 written as **D1–D13**).
