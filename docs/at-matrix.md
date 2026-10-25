@@ -85,7 +85,7 @@ None open. (AT2.6 "superset rejected" was resolved by implementing the check.)
   last user message contains it), `delayMs` (a slow turn) and a tool call.
   Plugin tools are deferred behind `tool_call`, so scripted agent calls use
   `tool_call` with `{name: "report_back" | "spawn_session", arguments}`.
-- `e2e/support/hermes_helper.py`: `spawn` (any initiation, `--model`,
+- `tests/e2e_support/hermes_helper.py`: `spawn` (any initiation, `--model`,
   `--worktree`, `--allowed-toolset`) and `session` (state.db row + messages);
   `seed-parent` seeds A with `custom:mock-e2e` so D6 can rank A's model.
 - `e2e/support/backend.ts`: `cost_rank` for the two mock models and a
@@ -97,7 +97,7 @@ Done for the backend lane (see above); the desktop lane still needs them for
 its own specs.
 
 
-- `e2e/support/hermes_helper.py spawn --session-id A --title … --task … [--initiation user_asked|own_initiative] [--model p:m] [--worktree]`
+- `tests/e2e_support/hermes_helper.py spawn --session-id A --title … --task … [--initiation user_asked|own_initiative] [--model p:m] [--worktree]`
   calls the registered `spawn_session` handler. Needed by AT2.1, AT2.3, AT3.2 and AT5.2.
 - A slash-command dispatch into a session (`/report`, `/abandon`, `/detach`)
   for AT4.5, AT7.1 and AT7.3 (AT7.3 uses it for `/detach` and `/detach confirm`).

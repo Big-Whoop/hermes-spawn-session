@@ -1,6 +1,6 @@
 # Design Decisions — hermes-spawn-session
 
-Decisions from the spec Q&A session (2026-10-16). Basis: `.hermes/research/`.
+Decisions from the spec Q&A session (2026-10-16). Basis: the research archive, now in `~/hermes-research/`.
 Reference model: Claude Desktop "nested sessions" (see screenshot in research).
 
 | # | Topic | Decision |

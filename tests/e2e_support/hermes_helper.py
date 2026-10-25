@@ -8,6 +8,10 @@ This helper calls the same plugin handlers directly instead, as
 ``scripts/live_test.py`` does. It runs with the Hermes venv python and the
 backend's HERMES_HOME and prints exactly one JSON line.
 
+It lives under ``tests/`` rather than ``e2e/`` because it imports Hermes core
+internals (``hermes_bootstrap``, ``tui_gateway.server``) and ``hermes plugins
+validate`` skips test trees in its rule 9 private-import lint.
+
 Commands:
     seed-parent --title T --cwd DIR [--source desktop] [--provider P --model M]
         Create a parent session row through the in-process TUI-gateway
@@ -27,7 +31,7 @@ Commands:
         Read S's state.db row (title, archived, cwd) and its messages.
 
 Example:
-    HERMES_HOME=/tmp/h /opt/hermes/.venv/bin/python e2e/support/hermes_helper.py seed-parent --title A --cwd /tmp/p
+    HERMES_HOME=/tmp/h /opt/hermes/.venv/bin/python tests/e2e_support/hermes_helper.py seed-parent --title A --cwd /tmp/p
 """
 
 from __future__ import annotations

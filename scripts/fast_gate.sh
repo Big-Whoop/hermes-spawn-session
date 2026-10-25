@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fast gate (Option D of .hermes/research/2026-10-17-plugin-e2e-staging/REPORT.md).
+# Fast gate (Option D of ~/hermes-research/2026-10-17-plugin-e2e-staging/REPORT.md).
 #
 # One command, agent-runnable, non-zero exit on any failure:
 #   1. pytest
@@ -38,15 +38,14 @@ SCRATCH="${TMPDIR:-/tmp}"
 PLUGIN_NAME="spawn-session"
 
 # Allowlist for `plugins validate --json` (stage 5). Known, deferred failures:
-#   security scan  - flags German research notes under .hermes/research/ that
-#                    ship inside the plugin tree (deferred, see
-#                    docs/catalog-contribution.md).
+#   (none; the research archive that failed the security scan moved out of
+#   the repo to ~/hermes-research/)
 # Warnings are allowlisted by prefix:
 #   private core imports - catalog rule 9 (gateway.session_context,
 #                    tui_gateway.server); deferred until upstream exposes a
 #                    public seam (NousResearch/hermes-agent#140199).
 # Everything else must pass.
-VALIDATE_ALLOWED_FAILED_CHECKS=("security scan")
+VALIDATE_ALLOWED_FAILED_CHECKS=()
 VALIDATE_ALLOWED_WARNING_PREFIXES=("private core imports")
 
 declare -a RESULTS=()
@@ -206,7 +205,7 @@ print(("FAIL " + ", ".join(bad)) if bad else "PASS")
 PY
 )
 case "$verdict" in
-    PASS) record validate PASS "allowlisted: ${VALIDATE_ALLOWED_FAILED_CHECKS[*]}; rule-9 warning" ;;
+    PASS) record validate PASS "allowlisted: rule-9 warning" ;;
     *)    record validate FAIL "${verdict#FAIL }" ;;
 esac
 
