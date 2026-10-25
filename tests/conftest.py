@@ -130,6 +130,29 @@ def desktop_parent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ParentCon
     return parent
 
 
+# Host modules the plugin imports lazily (behind try/except). Tests must not
+# depend on whether Hermes happens to be importable: the real tools.registry
+# would reject the toolsets tests use, the real plugin_events/tui_gateway would
+# broadcast and start gateway threads, and hermes_cli.config would read the
+# developer's config. Tests that need one install a stub (fake_registry,
+# fake_gateway, _fake_session_context, ...), which overrides this default.
+HOST_MODULES = (
+    "tools.registry",
+    "tui_gateway.server",
+    "hermes_cli.plugin_events",
+    "hermes_cli.config",
+    "hermes_constants",
+    "gateway.session_context",
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_host_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make every lazy host import fail, as if Hermes were not installed."""
+    for name in HOST_MODULES:
+        monkeypatch.setitem(sys.modules, name, None)
+
+
 @pytest.fixture(autouse=True)
 def _reset_tools_seams():
     """Keep handler seams at their real defaults between tests."""
