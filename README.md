@@ -22,8 +22,9 @@ A (your chat) ──spawn──▶ B "↳ Fix flaky test"  (own model/effort, sa
 - **Hermes Desktop.** The plugin only works in Desktop sessions (decision
   D13). In CLI, TUI-only or messaging sessions, the tool refuses and suggests
   something else.
-- **Hermes v0.22.2.** This is the version the plugin was built and tested
-  against.
+- **Hermes v0.22.5 or newer.** The slash commands read the calling session
+  from the command-handler context keywords added in v0.22.5. The plugin was
+  built against v0.22.2 and is tested against v0.22.5.
 - **Python dependencies.** These are declared in `pyproject.toml`: currently
   only `PyYAML>=6,<7`. Hermes provides `fastapi` (used by the dashboard
   backend) and its own modules, so they are not declared.
