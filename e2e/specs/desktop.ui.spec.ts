@@ -17,7 +17,7 @@ import * as path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { MOCK_MODEL_REF, PluginApi, hermesHelper, seedParent, uniqueTitle } from '../support/api.js'
+import { MOCK_MODEL_REF, PluginApi, hermesHelper, seedParent, storedSession, uniqueTitle } from '../support/api.js'
 import { readState, type BackendState } from '../support/backend.js'
 import {
   CHEAP_MODEL_REF, HAS_DESKTOP, PRICEY_MODEL_REF, catalogShot, enableDesktopPlugin, ensureCostRank,
@@ -129,6 +129,12 @@ test('child header in B and nested-spawn refusal', async () => {
   await header.locator('[data-spawn-session-action="toggle-task"]').click()
   await expect(header.locator('[data-spawn-session-collapsible-body="task"]')).toBeVisible()
   await catalogShot(page, '03-child-header')
+  // Status cards belong to A only: B's lineage reaches A through the spawn
+  // link, which must not make B list A's children (its own card included).
+  // The wait outlasts a /children round trip so a late card would show up.
+  await page.waitForTimeout(3_000)
+  await expect(ui(page, '[data-spawn-session-status]')).toHaveCount(0)
+  await expect(ui(page, '[data-spawn-session-card]')).toHaveCount(0)
 
   await runPaletteCommand(page, 'Spawn session with report')
   await expect(page.getByText(/cannot spawn further sessions/)).toBeVisible()
@@ -184,6 +190,8 @@ test('proposal card: Dismiss, Edit, Start', async () => {
   await page.getByRole('button', { name: 'Start', exact: true }).click()
   await expect(page.getByText(`Spawned “${edited}”`)).toBeVisible()
 
+  // Start focused the new child's tab; proposal cards render only in A.
+  await openSessionByTitle(page, parentTitle)
   const p3 = hermesHelper(state, ['propose', '--session-id', parentId, '--title', uniqueTitle('E2E proposal start'), '--task', 'x', '--model', MOCK_MODEL_REF])
   const card3 = ui(page, `[data-spawn-session-card="${p3.handover_id}"]`)
   await expect(card3).toBeVisible({ timeout: 30_000 })
@@ -343,6 +351,12 @@ test('AT2.4: Group by Projects lists B under A\'s project', async () => {
   await expect(group.getByText(childTitle, { exact: false }).first()).toBeVisible()
   await expect(group.locator(`[data-spawn-session-row="${b.handover_id}"]`)).toHaveText(/↳/)
   await catalogShot(page, '11-group-by-projects')
+
+  // Back to the default (flat) sidebar so later specs do not inherit the grouping.
+  await page.getByRole('button', { name: 'Filters', exact: true }).first().click()
+  await page.getByRole('menuitem', { name: 'Reset to defaults', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: `Open ${projectName}` })).toHaveCount(0)
 })
 
 test('AT6.2 / AT4.4: closed A shows N open report(s) and Deliver delivers', async () => {
@@ -383,9 +397,28 @@ test('AT7.3: Detached: title, Detached marker and report_back refusal', async ()
   await expect(card).toBeHidden({ timeout: 30_000 })
   expect((await api.get('/tree')).body.children[b.child_session_id]?.status).toBe('detached')
 
-  // Sidebar: retitled "↳ Detached: <title>" with the detached badge.
+  // The backend retitles B at once; assert that first (it is what the plugin owns).
+  expect(storedSession(state, b.child_session_id).title).toBe(`↳ Detached: ${title}`)
+
+  // Sidebar: retitled "↳ Detached: <title>" with the detached badge. The plugin
+  // SDK has no documented way to refresh the session list after a rename
+  // (SPEC.md section 7, "Retitle latency"): Desktop re-reads the list on the
+  // gateway's sessions.changed tick, coalesced to one refresh per 10 s, which
+  // normally shows the title in ~10 s. In about 1 of 3 full-suite runs that
+  // refresh still returns the pre-rename list (upstream: the sidebar endpoint's
+  // 5 s response cache / a dropped trailing refresh) and, with no later tick,
+  // the row stays stale indefinitely. Any later session activity fixes it, so
+  // after 20 s the spec causes one (a seeded session) and waits for the next
+  // refresh instead of waiting forever.
+  const detachedAt = Date.now()
   const row = page.getByText(`↳ Detached: ${title}`, { exact: false }).first()
-  await expect(row).toBeVisible({ timeout: 30_000 })
+  let via = 'sessions.changed'
+  if (!(await row.waitFor({ state: 'visible', timeout: 20_000 }).then(() => true, () => false))) {
+    via = 'a later session write'
+    seedParent(state, uniqueTitle('E2E sidebar refresh'))
+    await expect(row).toBeVisible({ timeout: 30_000 })
+  }
+  console.log(`AT7.3: sidebar showed the Detached title after ${Date.now() - detachedAt} ms (via ${via})`)
   await expect(page.locator(`[data-spawn-session-row="${b.handover_id}"]`).first()).toHaveAttribute('data-spawn-session-row-status', 'detached')
 
   // report_back from B is refused; B's header keeps showing the detached status.
