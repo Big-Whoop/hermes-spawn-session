@@ -84,6 +84,18 @@ class TestStatusCards:
         assert out["children"][0]["status"] == "reported"
         assert out["open_reports"] == 1
 
+    def test_child_does_not_list_its_parents_children(self, spawned, monkeypatch):
+        # Hermes links B to A via parent_session_id, so B's lineage is [B, A];
+        # B must not count as A (no status card for B inside B).
+        child = spawned["child_session_id"]
+        lineages = {child: [child, "ses-parent-1"], f"{child}-cont": [f"{child}-cont", child, "ses-parent-1"]}
+        monkeypatch.setattr(tools, "_lineage_ids", lambda sid: lineages.get(sid, [sid]))
+        _propose()
+        for sid in (child, f"{child}-cont"):
+            assert desktop.list_children(sid) == {"children": [], "open_reports": 0}
+            assert desktop.list_proposals(sid) == []
+        assert [c["handover_id"] for c in desktop.list_children("ses-parent-1")["children"]] == [spawned["handover_id"]]
+
     def test_delivered_after_report(self, spawned):
         _report(spawned["child_session_id"])
         c = desktop.list_children("ses-parent-1")["children"][0]

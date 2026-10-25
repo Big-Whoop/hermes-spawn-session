@@ -339,11 +339,25 @@ proposed ──confirm──▶ running ──report──▶ reported ──inj
   **‹A title›**" (link → `host.openSession(A)`), collapsible Task and Context.
 - A: status card per child (running / reported / delivered / abandoned /
   detached) with buttons Open, Abort, Detach; `proposed` card with title, task,
-  context, model selector, Start / Decline.
+  context, model selector, Start / Decline. Status cards and proposal cards
+  render only in A, never in B: B's `parent_session_id` is the spawn link to A,
+  so matching a parent by lineage stops at a spawned child (B or a compression
+  continuation of B never counts as A).
 - Sidebar: `↳` title prefix and leading badge (Q3). Ordering after A is NOT
   applied (card t_1f857d7f): `host.sessions.reorder()` replaces the whole manual
   Recents order and the SDK cannot read it, so reordering would clobber the
   user's own order.
+- Retitle latency: the backend sets `↳ Detached: <title>` at once, but the SDK
+  has no documented way to refresh the session list after a rename (no
+  `host.sessions.refresh`, no `ctx.runAction` id for it; the `session.title`
+  RPC only emits `session.info`; Desktop only patches row titles on a
+  `session.title` event, which only the core auto-titler emits). The sidebar
+  picks the title up on its next `sessions.changed` pass, which Desktop
+  coalesces to one list refresh per 10 s, so it normally shows after ~10 s.
+  Sometimes that pass still returns the list from before the rename (the
+  sidebar list endpoint caches responses for 5 s), and the row keeps the old
+  title until some later session activity triggers another pass. This is an
+  upstream gap; the plugin cannot work around it through documented APIs.
 - Reopen of A with `reported` children: banner "N open report(s)" → Deliver.
 
 ## 8. Config keys (`plugins.entries.spawn-session.*`)

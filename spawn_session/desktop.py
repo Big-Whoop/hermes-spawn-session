@@ -62,8 +62,18 @@ def _parent_ids(session_id: str) -> set[str]:
     the id of the live segment. Both are ancestors-or-self of each other, so a
     proposal matches when its parent id is in the lineage of ``session_id`` or
     ``session_id`` is in the lineage of its parent id.
+
+    The walk stops at a spawned child: B's ``parent_session_id`` is the spawn
+    link to A, not a compression predecessor, so B (or a continuation of B)
+    must not count as A and list A's children or proposals.
     """
-    return set(_lineage(session_id))
+    index = tools._load_index()
+    own: set[str] = set()
+    for sid in _lineage(session_id):
+        own.add(sid)
+        if index.is_child(sid):
+            break
+    return own
 
 
 def _matches_parent(meta_parent: Any, session_id: str, own_lineage: set[str]) -> bool:
